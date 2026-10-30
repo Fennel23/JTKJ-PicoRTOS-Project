@@ -101,8 +101,6 @@ static void print_task(void *arg){
             printf("%d\n", ambientLight);
             programState = WAITING;
         }
-
-
         
         // Exercise 4. Use the usb_serial_print() instead of printf or similar in the previous line.
         //             Check the rest of the code that you do not have printf (substitute them by usb_serial_print())
