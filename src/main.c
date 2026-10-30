@@ -32,13 +32,19 @@ static void btn_fxn(uint gpio, uint32_t eventMask) {
     // Tehtävä 1: Vaihda LEDin tila.
     //            Tarkista SDK, ja jos et löydä vastaavaa funktiota, sinun täytyy toteuttaa se itse.
     // Exercise 1: Toggle the LED. 
-    //             Check the SDK and if you do not find a function you would need to implement it yourself. 
+    //             Check the SDK and if you do not find a function you would need to implement it yourself.
+    toggle_red_led(); 
 }
 
 static void sensor_task(void *arg){
     (void)arg;
     // Tehtävä 2: Alusta valoisuusanturi. Etsi SDK-dokumentaatiosta sopiva funktio.
     // Exercise 2: Init the light sensor. Find in the SDK documentation the adequate function.
+    init_veml6030();
+    i2c_init(i2c_default, 400*1000);
+        
+    
+
    
     for(;;){
         
@@ -46,8 +52,9 @@ static void sensor_task(void *arg){
         //             
         // Exercise 2: Modify with application code here. Comment following line.
         //             Read sensor data and print it out as string; 
-        tight_loop_contents(); 
-
+        //tight_loop_contents();
+        uint32_t data = veml6030_read_light();
+        printf("%d\n", data);
 
    
 
@@ -68,7 +75,7 @@ static void sensor_task(void *arg){
         
         // Exercise 2. Just for sanity check. Please, comment this out
         // Tehtävä 2: Just for sanity check. Please, comment this out
-        printf("sensorTask\n");
+        //printf("sensorTask\n");
 
         // Do not remove this
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -159,8 +166,10 @@ int main() {
     //             Interruption handler is defined up as btn_fxn
     // Tehtävä 1:  Alusta painike ja LEd ja rekisteröi vastaava keskeytys.
     //             Keskeytyskäsittelijä on määritelty yläpuolella nimellä btn_fxn
-
-
+    
+    init_red_led();
+    init_button1();
+    gpio_set_irq_enabled_with_callback(SW1_PIN, GPIO_IRQ_EDGE_FALL, true, btn_fxn);
 
     
     
