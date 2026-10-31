@@ -14,8 +14,9 @@
 #define DEFAULT_STACK_SIZE 2048 
 
 //Add here necessary states
-enum state { IDLE=1 };
+enum state { IDLE=1};
 enum state programState = IDLE;
+
 
 static void example_task(void *arg){
     (void)arg;
@@ -35,14 +36,14 @@ int main() {
     init_hat_sdk();
     sleep_ms(300); //Wait some time so initialization of USB and hat is done.
 
-    TaskHandle_t myExampleTask = NULL;
+    TaskHandle_t example_task = NULL;
     // Create the tasks with xTaskCreate
     BaseType_t result = xTaskCreate(example_task,       // (en) Task function
                 "example",              // (en) Name of the task 
                 DEFAULT_STACK_SIZE, // (en) Size of the stack for this task (in words). Generally 1024 or 2048
                 NULL,               // (en) Arguments of the task 
                 2,                  // (en) Priority of this task
-                &myExampleTask);    // (en) A handle to control the execution of this task
+                &example_task);    // (en) A handle to control the execution of this task
 
     if(result != pdPASS) {
         printf("Example Task creation failed\n");
