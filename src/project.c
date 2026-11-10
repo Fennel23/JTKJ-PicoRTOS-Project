@@ -8,13 +8,12 @@
 #include <task.h>
 
 #include "tkjhat/sdk.h"
-//How do I commit changes to github, I seem to be doing smething wrong...
 
 // Default stack size for the tasks. It can be reduced to 1024 if task is not using lot of memory.
 #define DEFAULT_STACK_SIZE 2048
 #define BUFFER_LENGTH 128 
 
-//Add here necessary states
+
 enum state { IDLE=1, READ_POS, TRANSMIT, RECEIVE, DISPLAY, LED};
 enum state programState = IDLE;
 struct flags{
@@ -24,14 +23,15 @@ struct flags{
 char message[BUFFER_LENGTH];
 char receive[BUFFER_LENGTH];
 char translated[BUFFER_LENGTH];
+char empty[BUFFER_LENGTH] = {0};
 uint8_t messageCount = 0;
 uint8_t c;
 
 void morse_char(char morse, uint8_t *space){
     if (messageCount < BUFFER_LENGTH){
-        message[messageCount++] = morse; //increment by 1 happens after
-        *space = 0;
         flag.button1 = false;
+        message[messageCount++] = morse;
+        *space = 0;
     }
 
 }
@@ -42,7 +42,7 @@ void translate(char buf[]){
     uint8_t space = false;
     char *morse_translate[27] = {".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..",
                                 "-", "-.-", ".-..", "--", "-.", "---", ".--.", "--.", ".-.", 
-                                "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."}; //array of pointers (ainternal string arrays decay into pointer to first element.)
+                                "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."}; //array of pointers (internal string arrays decay into pointer to first element.)
 
     for(int i = 1; buf[i] != '\0'; i++){ 
         if ((buf[(i-1)] == ' ') && (buf[i] == ' ')){
@@ -91,16 +91,17 @@ static void idle_task(void *arg){
 
         if (programState == IDLE){
             rgb_led_write(0, 255, 0);
-            flag.button2 = false; //otherwise program may get stuck
+            flag.button2 = false; //temporary, otherwise program may get stuck
             if (flag.button1 && !flag.button2){
                 flag.button1 = false;
-                //programState = READ_POS;
-                programState = DISPLAY;
+                programState = READ_POS; //comment to force DISPLAY mode
+                //programState = DISPLAY; uncomment to force into DISPLAY mode
             }
-            //c = getchar_timeout_us(0);
-            //if (c != PICO_ERROR_TIMEOUT){
-                //programState = RECEIVE;
-            //}
+            // c = getchar_timeout_us(0); //uncomment for RECEIVE mode
+            // if (c != PICO_ERROR_TIMEOUT){
+            //     //printf("%c", c);
+            //     programState = RECEIVE;
+            // }
         }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -136,15 +137,14 @@ static void read_position_task(void *arg){
                     }
                 }
             } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
-                if (spaceCount == 2){
+                flag.button2 = false;
+                if (spaceCount == 2){ //will Transmit after 2x button2 or 3x button2
                     message[messageCount] = '\n';
                     spaceCount = 0;
-                    flag.button2 = false;
                     programState = TRANSMIT;
                 } else {
                     message[messageCount++] = ' ';
                     spaceCount++;
-                    flag.button2 = false;
                 }   
             } else if(messageCount == BUFFER_LENGTH){
                 programState = TRANSMIT;
@@ -156,8 +156,6 @@ static void read_position_task(void *arg){
 
 static void transmit_task(void *arg){
     (void) arg;
-
-    char empty[BUFFER_LENGTH] = {0};
 
     while (1){
 
@@ -204,7 +202,7 @@ static void receive_task(void *arg){
                 }
                 else if (i < BUFFER_LENGTH -1){
                     receive[i++] = (char)c;
-                    printf("%c", c);
+                    //printf("%c", c);
                 }
                 //add buffer overflow
                 c = getchar_timeout_us(0);
@@ -229,25 +227,19 @@ static void display_task(void *arg) {
             if (flag.button1){
                 flag.button1 = false;
                 clear_display();
-                
+                if (strlen(translated) == 0){
+                    strcpy(translated, empty); 
+                    programState = IDLE;
+                }
                 snprintf(display_buf,11,"%s",translated);
                 n = strlen(display_buf);
-                printf("%s\n", translated);//the second iteration both prints are just newlines
-                printf("%s\n", display_buf);
-                for (int i = (n-1); i <= strlen(translated); i++){
-                    translated[i-(n-1)] = translated[i];
-                }
-                printf("%s\n", translated);
-                printf("%s\n", display_buf);
                 write_text(display_buf);
-                if (strlen(translated) == 1){
-                    programState = IDLE;
+                for (int i = (n); i <= strlen(translated); i++){
+                    translated[i-(n)] = translated[i];
                 }
             }
         }
-
         vTaskDelay(pdMS_TO_TICKS(500));
-        
 
     }
 
@@ -266,9 +258,7 @@ static void example_task(void *arg){
 int main() {
     stdio_init_all();
     // Uncomment this lines if you want to wait till the serial monitor is connected
-    /*while (!stdio_usb_connected()){
-        sleep_ms(10);
-    }*/ 
+    
     init_hat_sdk();
     init_button1();
     init_button2();
@@ -279,6 +269,9 @@ int main() {
     gpio_set_irq_enabled_with_callback(SW1_PIN, GPIO_IRQ_EDGE_FALL, true, btn_fxn);
     gpio_set_irq_enabled(SW2_PIN, GPIO_IRQ_EDGE_FALL, true);
     sleep_ms(300); //Wait some time so initialization of USB and hat is done.
+    while (!stdio_usb_connected()){
+        sleep_ms(10);
+    } 
 
     TaskHandle_t readPosition, transfer, idling, receive, lcd = NULL;
     // Create the tasks with xTaskCreate
