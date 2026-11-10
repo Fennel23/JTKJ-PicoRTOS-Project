@@ -90,10 +90,10 @@ static void print_task(void *arg){
     
     while(1){
         
-        // Tehtävä 3: Kun tila on oikea, tulosta sensoridata merkkijonossa debug-ikkunaan
+        // Tehtävä 3: Kun tila on oikea, tulosta sensoridata merkkijonossa serial-monitor-ikkunaan
         //            Muista tilamuutos
         //            Älä unohda kommentoida seuraavaa koodiriviä.
-        // Exercise 3: Print out sensor data as string to debug window if the state is correct
+        // Exercise 3: Print out sensor data as string to serial monitor if the state is correct
         //             Remember to modify state
         //             Do not forget to comment next line of code.
         //tight_loop_contents();
@@ -102,21 +102,22 @@ static void print_task(void *arg){
             programState = WAITING;
         }
         
-        // Exercise 4. Use the usb_serial_print() instead of printf or similar in the previous line.
-        //             Check the rest of the code that you do not have printf (substitute them by usb_serial_print())
+        // Exercise 4. Use usb_serial_print() instead of printf() for debug output
+        //             produced after the USB serial library has been initialized.
+        //             Do not replace error messages that can execute before usb_serial_init().
         //             Use the TinyUSB library to send data through the other serial port (CDC 1).
         //             You can use the functions at https://github.com/hathach/tinyusb/blob/master/src/class/cdc/cdc_device.h
         //             You can find an example at hello_dual_cdc
         //             The data written using this should be provided using csv
-        //             timestamp, luminance
-        // Tehtävä 4. Käytä usb_serial_print()-funktiota printf:n tai vastaavien sijaan edellisellä rivillä.
-        //            Tarkista myös muu koodi ja varmista, ettei siinä ole printf-kutsuja
-        //            (korvaa ne usb_serial_print()-funktiolla).
+        //             timestamp, illuminance
+        // Tehtävä 4. Käytä usb_serial_print()-funktiota printf()-funktion sijaan
+        //            debug-tulostukseen sen jälkeen, kun USB-sarjaliikennekirjasto on alustettu.
+        //            Älä korvaa virheilmoituksia, jotka voivat suorittua ennen usb_serial_init()-kutsua.
         //            Käytä TinyUSB-kirjastoa datan lähettämiseen toisen sarjaportin (CDC 1) kautta.
         //            Voit käyttää funktioita: https://github.com/hathach/tinyusb/blob/master/src/class/cdc/cdc_device.h
         //            Esimerkki löytyy hello_dual_cdc-projektista.
         //            Tällä menetelmällä kirjoitettu data tulee antaa CSV-muodossa:
-        //            timestamp, luminance
+        //            timestamp, illuminance
 
 
 
@@ -148,12 +149,12 @@ int main() {
     // Exercise 4: Comment the statement stdio_init_all(); 
     //             Instead, add AT THE END OF MAIN (before vTaskStartScheduler();) adequate statements to enable the TinyUSB library and the usb-serial-debug.
     //             You can see hello_dual_cdc for help
-    //             In CMakeLists.txt add the cfg-dual-usbcdc
+    //             In CMakeLists.txt add usb_serial_debug to target_link_libraries.
     //             In CMakeLists.txt deactivate pico_enable_stdio_usb
     // Tehtävä 4:  Kommentoi lause stdio_init_all();
     //             Sen sijaan lisää MAIN LOPPUUN (ennen vTaskStartScheduler();) tarvittavat komennot aktivoidaksesi TinyUSB-kirjaston ja usb-serial-debugin.
     //             Voit katsoa apua esimerkistä hello_dual_cdc.
-    //             Lisää CMakeLists.txt-tiedostoon cfg-dual-usbcdc
+    //             Lisää CMakeLists.txt-tiedoston target_link_libraries-kohtaan usb_serial_debug.
     //             Poista CMakeLists.txt-tiedostosta käytöstä pico_enable_stdio_usb
 
     stdio_init_all();
