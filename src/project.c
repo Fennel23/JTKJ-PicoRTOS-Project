@@ -25,7 +25,7 @@ char receive[BUFFER_LENGTH];
 char translated[BUFFER_LENGTH];
 char empty[BUFFER_LENGTH] = {0};
 uint8_t messageCount = 0;
-uint8_t c;
+int8_t c;
 
 void morse_char(char morse, uint8_t *space){
     if (messageCount < BUFFER_LENGTH){
@@ -94,14 +94,13 @@ static void idle_task(void *arg){
             flag.button2 = false; //temporary, otherwise program may get stuck
             if (flag.button1 && !flag.button2){
                 flag.button1 = false;
-                programState = READ_POS; //comment to force DISPLAY mode
-                //programState = DISPLAY; uncomment to force into DISPLAY mode
+                //programState = READ_POS; //comment to force DISPLAY mode
+                programState = DISPLAY; //uncomment to force into DISPLAY mode
             }
-            // c = getchar_timeout_us(0); //uncomment for RECEIVE mode
-            // if (c != PICO_ERROR_TIMEOUT){
-            //     //printf("%c", c);
-            //     programState = RECEIVE;
-            // }
+            c = getchar_timeout_us(0); //uncomment for RECEIVE mode
+            if (c != PICO_ERROR_TIMEOUT){
+                programState = RECEIVE;
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -181,24 +180,27 @@ static void receive_task(void *arg){
         if (programState == RECEIVE){
             rgb_led_write(255, 255, 0);
             uint8_t i = 0;
+            // char display_buf[11];
             do {
                 if (c == '\n'){
+                    receive[i++] = '\n';
                     receive[i] = '\0';
                     i = 0;
                     printf("%s", receive);
-                    programState = IDLE; //for now, later change to LED/print to display according to button.
-                    // while (1){
-                    //     if(flag.button1){
-                    //         flag.button1 = false;
-                    //         programState = DISPLAY;
-                    //         break;
-                    //     }
-                    //     else if (flag.button2){
-                    //         flag.button2 = false;
-                    //         programState = LED;
-                    //         break;
-                    //     }
-                    // }
+                    while (1){
+                        if(flag.button1){
+                            translate(receive);
+                            printf("%s", translated);
+                            flag.button1 = false;
+                            programState = DISPLAY;
+                            break;
+                        }
+                        else if (flag.button2){
+                            flag.button2 = false;
+                            programState = LED;
+                            break;
+                        }
+                    }
                 }
                 else if (i < BUFFER_LENGTH -1){
                     receive[i++] = (char)c;
@@ -216,7 +218,7 @@ static void receive_task(void *arg){
 static void display_task(void *arg) {
     (void)arg;
 
-    char translated[BUFFER_LENGTH] = "abcdefghijklmnopqrstuvwxyz";
+    //char translated[BUFFER_LENGTH] = "abcdefghijklmnopqrstuvwxyz";
     char display_buf[11];
     uint8_t n;
 
