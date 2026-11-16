@@ -17,6 +17,7 @@
 #define DEFAULT_STACK_SIZE 2048
 #define BUFFER_LENGTH 1024 
 
+//--------------------------------------------------------------------------------------------------------------------------------------
 // https://github.com/robsoncouto/arduino-songs/blob/master/pacman/pacman.ino
 
 #define NOTE_B4  494
@@ -33,14 +34,17 @@
 #define NOTE_E6  1319
 #define NOTE_G6  1568
 #define REST      0
+//--------------------------------------------------------------------------------------------------------------------------------------
 
 
 enum state { IDLE=1, READ_POS, READ_LIGHT, TRANSMIT, RECEIVE, DISPLAY, LED, MUSIC};
 enum state programState = IDLE;
+
 struct flags{
     uint8_t button1;
     uint8_t button2;
 } flag = {false, false};
+
 char message[BUFFER_LENGTH];
 char receive[BUFFER_LENGTH];
 char translated[BUFFER_LENGTH];
@@ -48,7 +52,9 @@ char empty[BUFFER_LENGTH] = {0};
 uint8_t messageCount = 0;
 int8_t c;
 
-int melody[] = { // https://github.com/robsoncouto/arduino-songs/blob/master/pacman/pacman.ino
+//--------------------------------------------------------------------------------------------------------------------------------------
+// https://github.com/robsoncouto/arduino-songs/blob/master/pacman/pacman.ino
+int melody[] = { 
 
     // Pacman
     // Score available at https://musescore.com/user/85429/scores/107109
@@ -61,7 +67,11 @@ int melody[] = { // https://github.com/robsoncouto/arduino-songs/blob/master/pac
     NOTE_F5, 32,  NOTE_FS5, 32,  NOTE_G5, 32,  NOTE_G5, 32, NOTE_GS5, 32,  NOTE_A5, 16, NOTE_B5, 8
     };
 
+//--------------------------------------------------------------------------------------------------------------------------------------
+
+
 void morse_char(char morse, uint8_t *space){
+
     if (messageCount < BUFFER_LENGTH){
         message[messageCount++] = morse;
         *space = 0;
@@ -71,12 +81,13 @@ void morse_char(char morse, uint8_t *space){
 }
 
 void translate(char buf[]){
+
     char *token;
     uint8_t count = 0;
     uint8_t space = false;
     char *morse_translate[27] = {".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..",
                                 "-", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", 
-                                "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."}; //array of pointers (internal string arrays decay into pointer to first element.)
+                                "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."};
 
     for(int i = 1; buf[i] != '\0'; i++){ 
         if ((buf[(i-1)] == ' ') && (buf[i] == ' ')){
@@ -87,33 +98,36 @@ void translate(char buf[]){
     token = strtok(buf, " ");
 
     while (token != NULL){
+
         uint8_t len = strlen(token);
+
         if(token[(len-1)] == 's'){
             space = true;
             token[(len-1)] = '\0';
-
         } else if(token == "\n"){
             translated[count++] = '\n';
         }
+
         for (int i=0; i < 26; i++){
             if(strcmp(morse_translate[i], token) == 0){
                 translated[count++] = 97 + i;
             }
         }
+
         if (space){
             translated[count++] = ' ';
             space = false;
         }
+
         token = strtok(NULL, " ");
     }
 }
 
+
+//--------------------------------------------------------------------------------------------------------------------------------------
 // https://github.com/robsoncouto/arduino-songs/blob/master/pacman/pacman.ino
 
-// change this to make the song slower or faster
-//int tempo = 105;
-
-// notes of the moledy followed by the duration.
+// notes of the melody followed by the duration.
 // a 4 means a quarter note, 8 an eighteenth , 16 sixteenth, so on
 // !!negative numbers are used to represent dotted notes,
 // so -4 means a dotted quarter note, that is, a quarter plus an eighteenth!!
@@ -154,19 +168,27 @@ void musicPlayer() {
             buzzer_turn_off();
         }
     }
+
+//--------------------------------------------------------------------------------------------------------------------------------------
+
+
 void pacman(uint8_t y, uint8_t x1, uint8_t x2){
+
     for(int i = y; i<(y+4); i++){
             draw_line(x1, i, x2, i);
         }
+
 }
 
 static void btn_fxn(uint gpio, uint32_t eventMask){
+
     if(gpio == BUTTON1){
         flag.button1 = true;
 
     }else if (gpio == BUTTON2){
         flag.button2 = true;
     }
+
 }
 
 static void idle_task(void *arg){
@@ -175,119 +197,120 @@ static void idle_task(void *arg){
     while (1) {
 
         if (programState == IDLE){
+
             rgb_led_write(0, 255, 0);
-            //flag.button2 = false; //temporary, otherwise program may get stuck
+
             if (flag.button1 && !flag.button2){
                 flag.button1 = false;
-                programState = READ_POS; //comment to force DISPLAY mode
-                //programState = DISPLAY; //uncomment to force into DISPLAY mode
+                programState = READ_POS;
+            } else if (!flag.button1 && flag.button2){
+                flag.button2 = false;
+                programState = READ_LIGHT;
             } else if (flag.button1 && flag.button2){
                 flag.button1 = false;
                 flag.button2 = false;
                 programState = MUSIC;
-            } else if (!flag.button1 && flag.button2){
-                flag.button2 = false;
-                programState = READ_LIGHT;
             }
-            c = getchar_timeout_us(0); //uncomment for RECEIVE mode
+
+            c = getchar_timeout_us(0);
             if (c != PICO_ERROR_TIMEOUT){
-                receive[0] = (char)c; //the first character is overwritten in receive state, but that is not a bad thing as it generally is 
-                printf("%c\n", c);
+                //receive[0] = (char)c; //the first character should be overwritten in receive state but this doesn't happen?
+                //printf("%c\n", c);
                 programState = RECEIVE;
             }
+
         }
+
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
+
 static void read_position_task(void *arg){
     (void) arg;
 
-    uint8_t spaceCount = 0; //Doesn't always work correctly
+    uint8_t space = 0; 
     float ax, ay, az, gx, gy, gz, t;
-    // if (init_ICM42670() == 0) {
-    //     printf("IMU initialized successfully!\n");
-    //     if (ICM42670_start_with_default_values() != 0){
-    //         printf("IMU could not initialize accelerometer or gyroscope");
-    //     }
-    // } else {
-    //     printf("Failed to initialize IMU.\n");
-    // }
-
-    init_ICM42670();
-    ICM42670_start_with_default_values();
 
     while (1){
 
         if (programState == READ_POS){
+
             rgb_led_write(255, 0, 0);
+
             if(flag.button1){
+
                 if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {//should I average multiple measurements?
                     if((0.85 < az) && (az < 1.15)){
-                        morse_char('-', &spaceCount);
-                        printf("%d", spaceCount);
+                        morse_char('-', &space);
                     } else if (((0.85 < ay) && (ay < 1.15)) || ((ay < -0.85) && (-1 < ay))){
-                        morse_char('.', &spaceCount);
-                        printf("%d", spaceCount);
+                        morse_char('.', &space);
                     }
                 }
+
             } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
-                if (spaceCount == 2){ //will Transmit after 2x button2 or 3x button2
+
+                if (space == 2){ 
                     message[messageCount] = '\n';
-                    spaceCount = 0;
-                    printf("%d", spaceCount);
+                    space = 0;
                     programState = TRANSMIT;
-                } else {
+                } else if (space < 2){
                     message[messageCount++] = ' ';
-                    spaceCount++;
-                    printf("%d", spaceCount);
+                    space++;
                 }
                 flag.button2 = false;
+
             } else if(messageCount == BUFFER_LENGTH){
                 programState = TRANSMIT;
             }
+
         }
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
+
 
 static void read_light_task(void *arg){
     (void) arg;
 
-    uint8_t spaceCount = 0; //Doesn't always work correctly
+    uint8_t space = 0;
 
     while (1){
 
         if (programState == READ_LIGHT){
+
             rgb_led_write(0, 0, 255);
+
             if(flag.button1){
-                printf("%d\n", veml6030_read_light());
-                    if(veml6030_read_light() < 10){
-                        morse_char('-', &spaceCount);
-                        printf("%d", spaceCount);
-                    } else{
-                        morse_char('.', &spaceCount);
-                        printf("%d", spaceCount);
-                    }
-            } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
-                if (spaceCount == 2){ //will Transmit after 2x button2 or 3x button2
-                    message[messageCount] = '\n';
-                    spaceCount = 0;
-                    printf("%d", spaceCount);
-                    programState = TRANSMIT;
+
+                if(veml6030_read_light() < 10){
+                    morse_char('-', &space);
                 } else {
+                    morse_char('.', &space);
+                }
+
+            } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
+
+                if (space == 2){
+                    message[messageCount] = '\n';
+                    space = 0;
+                    programState = TRANSMIT;
+                } else if (space < 2) {
                     message[messageCount++] = ' ';
-                    spaceCount++;
-                    printf("%d", spaceCount);
+                    space++;
                 }
                 flag.button2 = false;
+
             } else if(messageCount == BUFFER_LENGTH){
                 programState = TRANSMIT;
             }
         }
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
+
 
 static void transmit_task(void *arg){
     (void) arg;
@@ -295,19 +318,19 @@ static void transmit_task(void *arg){
     while (1){
 
         if (programState == TRANSMIT){
-            //gpio_set_irq_enabled(SW1_PIN, GPIO_IRQ_EDGE_FALL, false); //disable innterrupts?
-            //gpio_set_irq_enabled(SW2_PIN, GPIO_IRQ_EDGE_FALL, false);
-            printf("sent: %s\n", message);
+
+            printf("%s", message);
             strcpy(message, empty);
-            printf("empty?: %s\n", message);
             buzzer_play_tone(731, 100);
             messageCount = 0;
             programState = IDLE;
-            
+
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+
+        vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
+
 
 static void receive_task(void *arg){
     (void) arg;
@@ -315,17 +338,21 @@ static void receive_task(void *arg){
     while (1){
 
         if (programState == RECEIVE){
+
             printf("%d", flag.button2);
             rgb_led_write(255, 255, 0);
             uint8_t i = 0;
-            // char display_buf[11];
+
             while (c != PICO_ERROR_TIMEOUT){
+
                 if (c == '\n'){
                     receive[i++] = '\n';
                     receive[i] = '\0';
                     i = 0;
                     printf("%s", receive);
+
                     while (1){
+
                         if(flag.button1){
                             translate(receive);
                             strcpy(receive, empty);
@@ -333,28 +360,28 @@ static void receive_task(void *arg){
                             flag.button1 = false;
                             programState = DISPLAY;
                             break;
-                        }
-                        else if(flag.button2){
-                            printf("%d", flag.button2);
+                        } else if(flag.button2){
+                            //printf("button2: %d\n", flag.button2);
                             flag.button2 = false;
-                            printf("%d", flag.button2);
+                            //printf("button2: %d\n", flag.button2);
                             programState = LED;
                             break;
                         }
                     }
-                }
-                else if (i < BUFFER_LENGTH -1){
+                } else if (i < BUFFER_LENGTH-1){
                     receive[i++] = (char)c;
-                    //printf("%c", c);
                 }
                 //add buffer overflow
                 c = getchar_timeout_us(0);
             } 
+
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
 }
+
 
 static void display_task(void *arg) {
     (void)arg;
@@ -367,70 +394,85 @@ static void display_task(void *arg) {
     while(1) {
 
         if (programState == DISPLAY){
+
             rgb_led_write(255, 0, 255);
+
             if (flag.button1){
                 flag.button1 = false;
                 clear_display();
                 if (strlen(translated) == 0){
                     strcpy(display_buf, empty);
-                    printf("empty: %s, %s, %s?\n", translated, receive, display_buf); 
                     programState = IDLE;
                 }
+
                 snprintf(display_buf,11,"%s",translated);
                 n = strlen(display_buf);
                 write_text(display_buf);
+
                 for (int i = (n); i <= strlen(translated); i++){
                     translated[i-(n)] = translated[i];
                 }
             }
 
         }
+
         vTaskDelay(pdMS_TO_TICKS(200));
 
     }
 
 }
 
+
 static void led_task(void *arg){
     (void)arg;
 
     while(1){
+
         if (programState == LED){
+
             rgb_led_write(0, 255, 255);
-            printf("%s", receive);
             sleep_ms(500);
             stop_rgb_led();
+            sleep_ms(500);
+
             for (uint8_t i = 0; i <= strlen(receive); i++){
+
                 if (receive[i] == '-'){
-                    blink_led(2);
+                    set_led_status(true);
+                    sleep_ms(541);
+                    set_led_status(false);
+                    sleep_ms(389);
+                } else if (receive[i] == '.'){
+                    set_led_status(true);
+                    sleep_ms(127);
+                    set_led_status(false);
+                    sleep_ms(389);
+                } else if (receive[i] == ' '){
                     sleep_ms(1000);
-                }
-                else if (receive[i] == '.'){
-                    blink_led(1);
-                    sleep_ms(1000);
-                }
-                else if (receive[i] == ' '){
-                    sleep_ms(1000);
-                }
-                else if (receive[i] == '\n'){
+                } else if (receive[i] == '\n'){
                     strcpy(receive, empty);
                     init_rgb_led();
-                    printf("%d", flag.button2);
+                    printf("button2: %d\n", flag.button2);
                     programState = IDLE;
                 }
             }
+
         }
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
+
     
 static void music_task(void *arg){
     (void)arg;
 
     while (1){
+
         if (programState == MUSIC){
 
             rgb_led_write(0, 0, 0);
+
             pacman(2, 52, 76);
             pacman(6, 44, 84);
             pacman(10, 40, 88);
@@ -446,6 +488,7 @@ static void music_task(void *arg){
             pacman(50, 40, 88);
             pacman(54, 44, 84);
             pacman(58, 52, 76);
+
             musicPlayer();
             clear_display();
             programState = IDLE;
@@ -471,11 +514,13 @@ int main() {
     init_button1();
     init_button2();
     init_rgb_led();
+    init_ICM42670();
+    ICM42670_start_with_default_values();
     init_buzzer();
     init_veml6030();
-    init_led();
     init_display();
     clear_display();
+    init_led();
     gpio_set_irq_enabled_with_callback(SW1_PIN, GPIO_IRQ_EDGE_FALL, true, btn_fxn);
     gpio_set_irq_enabled(SW2_PIN, GPIO_IRQ_EDGE_FALL, true);
     sleep_ms(300); //Wait some time so initialization of USB and hat is done.
@@ -483,43 +528,12 @@ int main() {
     //    sleep_ms(10);
     //} 
 
-    TaskHandle_t readPosition, readLight, transfer, idling, receive, light, lcd, song = NULL;
+    TaskHandle_t readPosition, readLight, transferring, idling, receiving, display_lcd ,display_led, singing = NULL;
     // Create the tasks with xTaskCreate
-    BaseType_t result = xTaskCreate(read_position_task,       // (en) Task function
-                "position",              // (en) Name of the task 
-                DEFAULT_STACK_SIZE, // (en) Size of the stack for this task (in words). Generally 1024 or 2048
-                NULL,               // (en) Arguments of the task 
-                2,                  // (en) Priority of this task
-                &readPosition);    // (en) A handle to control the execution of this task
-    if(result != pdPASS) {
-        printf("Task creation failed\n");
-        return 0;
-    }
 
-    BaseType_t light_sensor = xTaskCreate(read_light_task,
-            "light",
-            DEFAULT_STACK_SIZE,
-            NULL,
-            2,
-            &transfer);
-    if(light_sensor != pdPASS) {
-        printf("Task creation failed\n");
-        return 0;
-    }
-
-    BaseType_t send = xTaskCreate(transmit_task,
-            "transmit",
-            DEFAULT_STACK_SIZE,
-            NULL,
-            2,
-            &transfer);
-    if(send != pdPASS) {
-        printf("Task creation failed\n");
-        return 0;
-    }
-
-    BaseType_t nothing = xTaskCreate(idle_task,
-            "idling",
+    BaseType_t nothing = xTaskCreate(
+            idle_task,
+            "idle",
             DEFAULT_STACK_SIZE,
             NULL,
             2,
@@ -529,46 +543,86 @@ int main() {
         return 0;
     }
 
-    BaseType_t incoming = xTaskCreate(receive_task,
+    BaseType_t read_pos = xTaskCreate(
+                read_position_task,       // (en) Task function
+                "position",              // (en) Name of the task 
+                DEFAULT_STACK_SIZE, // (en) Size of the stack for this task (in words). Generally 1024 or 2048
+                NULL,               // (en) Arguments of the task 
+                2,                  // (en) Priority of this task
+                &readPosition);    // (en) A handle to control the execution of this task
+    if(read_pos != pdPASS) {
+        printf("Task creation failed\n");
+        return 0;
+    }
+
+    BaseType_t read_light = xTaskCreate(
+            read_light_task,
+            "light",
+            DEFAULT_STACK_SIZE,
+            NULL,
+            2,
+            &readLight);
+    if(read_light != pdPASS) {
+        printf("Task creation failed\n");
+        return 0;
+    }
+
+    BaseType_t outgoing = xTaskCreate(
+            transmit_task,
+            "transmit",
+            DEFAULT_STACK_SIZE,
+            NULL,
+            2,
+            &transferring);
+    if(outgoing != pdPASS) {
+        printf("Task creation failed\n");
+        return 0;
+    }
+
+    BaseType_t incoming = xTaskCreate(
+            receive_task,
             "receive",
             DEFAULT_STACK_SIZE,
             NULL,
             2,
-            &receive);
+            &receiving);
     if(incoming != pdPASS) {
         printf("Task creation failed\n");
         return 0;
     }
 
-    BaseType_t screen = xTaskCreate(display_task,
+    BaseType_t screen = xTaskCreate(
+            display_task,
             "lcd",
             DEFAULT_STACK_SIZE,
             NULL,
             2,
-            &lcd);
+            &display_lcd);
     if(screen != pdPASS) {
         printf("Task creation failed\n");
         return 0;
     }
 
-    BaseType_t music = xTaskCreate(music_task,
-            "song",
-            DEFAULT_STACK_SIZE,
-            NULL,
-            2,
-            &song);
-    if(music != pdPASS) {
-        printf("Task creation failed\n");
-        return 0;
-    }
-
-    BaseType_t display_led = xTaskCreate(led_task,
+    BaseType_t blink = xTaskCreate(
+            led_task,
             "led",
             DEFAULT_STACK_SIZE,
             NULL,
             2,
-            &light);
-    if(display_led != pdPASS) {
+            &display_led);
+    if(blink != pdPASS) {
+        printf("Task creation failed\n");
+        return 0;
+    }
+
+    BaseType_t music = xTaskCreate(
+            music_task,
+            "song",
+            DEFAULT_STACK_SIZE,
+            NULL,
+            2,
+            &singing);
+    if(music != pdPASS) {
         printf("Task creation failed\n");
         return 0;
     }
