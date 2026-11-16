@@ -35,7 +35,7 @@
 #define REST      0
 
 
-enum state { IDLE=1, READ_POS, TRANSMIT, RECEIVE, DISPLAY, LED, MUSIC};
+enum state { IDLE=1, READ_POS, READ_LIGHT, TRANSMIT, RECEIVE, DISPLAY, LED, MUSIC};
 enum state programState = IDLE;
 struct flags{
     uint8_t button1;
@@ -185,6 +185,9 @@ static void idle_task(void *arg){
                 flag.button1 = false;
                 flag.button2 = false;
                 programState = MUSIC;
+            } else if (!flag.button1 && flag.button2){
+                flag.button2 = false;
+                programState = READ_LIGHT;
             }
             c = getchar_timeout_us(0); //uncomment for RECEIVE mode
             if (c != PICO_ERROR_TIMEOUT){
@@ -248,6 +251,44 @@ static void read_position_task(void *arg){
     }
 }
 
+static void read_light_task(void *arg){
+    (void) arg;
+
+    uint8_t spaceCount = 0; //Doesn't always work correctly
+
+    while (1){
+
+        if (programState == READ_LIGHT){
+            rgb_led_write(0, 0, 255);
+            if(flag.button1){
+                printf("%d\n", veml6030_read_light());
+                    if(veml6030_read_light() < 10){
+                        morse_char('-', &spaceCount);
+                        printf("%d", spaceCount);
+                    } else{
+                        morse_char('.', &spaceCount);
+                        printf("%d", spaceCount);
+                    }
+            } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
+                if (spaceCount == 2){ //will Transmit after 2x button2 or 3x button2
+                    message[messageCount] = '\n';
+                    spaceCount = 0;
+                    printf("%d", spaceCount);
+                    programState = TRANSMIT;
+                } else {
+                    message[messageCount++] = ' ';
+                    spaceCount++;
+                    printf("%d", spaceCount);
+                }
+                flag.button2 = false;
+            } else if(messageCount == BUFFER_LENGTH){
+                programState = TRANSMIT;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 static void transmit_task(void *arg){
     (void) arg;
 
@@ -256,8 +297,9 @@ static void transmit_task(void *arg){
         if (programState == TRANSMIT){
             //gpio_set_irq_enabled(SW1_PIN, GPIO_IRQ_EDGE_FALL, false); //disable innterrupts?
             //gpio_set_irq_enabled(SW2_PIN, GPIO_IRQ_EDGE_FALL, false);
-            printf("%s", message);
+            printf("sent: %s\n", message);
             strcpy(message, empty);
+            printf("empty?: %s\n", message);
             buzzer_play_tone(731, 100);
             messageCount = 0;
             programState = IDLE;
@@ -273,6 +315,7 @@ static void receive_task(void *arg){
     while (1){
 
         if (programState == RECEIVE){
+            printf("%d", flag.button2);
             rgb_led_write(255, 255, 0);
             uint8_t i = 0;
             // char display_buf[11];
@@ -291,8 +334,10 @@ static void receive_task(void *arg){
                             programState = DISPLAY;
                             break;
                         }
-                        else if (flag.button2){
+                        else if(flag.button2){
+                            printf("%d", flag.button2);
                             flag.button2 = false;
+                            printf("%d", flag.button2);
                             programState = LED;
                             break;
                         }
@@ -345,6 +390,39 @@ static void display_task(void *arg) {
     }
 
 }
+
+static void led_task(void *arg){
+    (void)arg;
+
+    while(1){
+        if (programState == LED){
+            rgb_led_write(0, 255, 255);
+            printf("%s", receive);
+            sleep_ms(500);
+            stop_rgb_led();
+            for (uint8_t i = 0; i <= strlen(receive); i++){
+                if (receive[i] == '-'){
+                    blink_led(2);
+                    sleep_ms(1000);
+                }
+                else if (receive[i] == '.'){
+                    blink_led(1);
+                    sleep_ms(1000);
+                }
+                else if (receive[i] == ' '){
+                    sleep_ms(1000);
+                }
+                else if (receive[i] == '\n'){
+                    strcpy(receive, empty);
+                    init_rgb_led();
+                    printf("%d", flag.button2);
+                    programState = IDLE;
+                }
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
     
 static void music_task(void *arg){
     (void)arg;
@@ -394,6 +472,8 @@ int main() {
     init_button2();
     init_rgb_led();
     init_buzzer();
+    init_veml6030();
+    init_led();
     init_display();
     clear_display();
     gpio_set_irq_enabled_with_callback(SW1_PIN, GPIO_IRQ_EDGE_FALL, true, btn_fxn);
@@ -403,7 +483,7 @@ int main() {
     //    sleep_ms(10);
     //} 
 
-    TaskHandle_t readPosition, transfer, idling, receive, lcd, song = NULL;
+    TaskHandle_t readPosition, readLight, transfer, idling, receive, light, lcd, song = NULL;
     // Create the tasks with xTaskCreate
     BaseType_t result = xTaskCreate(read_position_task,       // (en) Task function
                 "position",              // (en) Name of the task 
@@ -412,6 +492,17 @@ int main() {
                 2,                  // (en) Priority of this task
                 &readPosition);    // (en) A handle to control the execution of this task
     if(result != pdPASS) {
+        printf("Task creation failed\n");
+        return 0;
+    }
+
+    BaseType_t light_sensor = xTaskCreate(read_light_task,
+            "light",
+            DEFAULT_STACK_SIZE,
+            NULL,
+            2,
+            &transfer);
+    if(light_sensor != pdPASS) {
         printf("Task creation failed\n");
         return 0;
     }
@@ -467,6 +558,17 @@ int main() {
             2,
             &song);
     if(music != pdPASS) {
+        printf("Task creation failed\n");
+        return 0;
+    }
+
+    BaseType_t display_led = xTaskCreate(led_task,
+            "led",
+            DEFAULT_STACK_SIZE,
+            NULL,
+            2,
+            &light);
+    if(display_led != pdPASS) {
         printf("Task creation failed\n");
         return 0;
     }
