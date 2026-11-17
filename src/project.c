@@ -389,6 +389,7 @@ static void display_task(void *arg) {
     //char translated[BUFFER_LENGTH] = "abcdefghijklmnopqrstuvwxyz";
     char display_buf[11];
     char empty[11] = {0};
+    char empty1[BUFFER_LENGTH] = {0};
     uint8_t n;
 
     while(1) {
@@ -402,6 +403,7 @@ static void display_task(void *arg) {
                 clear_display();
                 if (strlen(translated) == 0){
                     strcpy(display_buf, empty);
+                    memcpy(translated, empty1, BUFFER_LENGTH);
                     programState = IDLE;
                 }
 
