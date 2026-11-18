@@ -37,7 +37,7 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 
 
-enum state { IDLE=1, READ_POS, READ_LIGHT, TRANSMIT, RECEIVE, DISPLAY, LED, MUSIC};
+enum state { IDLE=1, READ_POS, READ_LIGHT, TRANSMIT, RECEIVE, DISPLAY, LED, MUSIC, FLOWER};
 enum state programState = IDLE;
 
 struct flags{
@@ -71,6 +71,7 @@ int melody[] = {
 
 
 void morse_char(char morse, uint8_t *space){
+    //add character to message, reset consecutive space
 
     if (messageCount < BUFFER_LENGTH){
         message[messageCount++] = morse;
@@ -81,15 +82,16 @@ void morse_char(char morse, uint8_t *space){
 }
 
 void translate(char buf[]){
-
+    //translate string of morse code to ascii characters.
     char *token;
     uint8_t count = 0;
-    uint8_t space = false;
+    uint8_t space = false; //keeps track whether space is needed
     char *morse_translate[27] = {".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..",
                                 "-", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", 
                                 "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."};
 
     for(int i = 1; buf[i] != '\0'; i++){ 
+        //use 's' to signal 2 consecutive spaces, means we need a space between letters.
         if ((buf[(i-1)] == ' ') && (buf[i] == ' ')){
             buf[(i-1)] = 's';
         }
@@ -114,7 +116,7 @@ void translate(char buf[]){
             }
         }
 
-        if (space){
+        if (space){ //space added after letter added
             translated[count++] = ' ';
             space = false;
         }
@@ -173,15 +175,34 @@ void musicPlayer() {
 
 
 void pacman(uint8_t y, uint8_t x1, uint8_t x2){
-
     for(int i = y; i<(y+4); i++){
             draw_line(x1, i, x2, i);
         }
 
 }
 
-static void btn_fxn(uint gpio, uint32_t eventMask){
+void sym(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1){
+    //draw line and symmetry of line accros y-axis
+    uint8_t hold;
 
+    if(y1 < y0){ //in order for a line to be drawn, y1 and x1 must be the smallest values.
+        hold = y0;
+        y0 = y1;
+        y1 = hold;
+    }
+    if(x1 < x0){
+        hold = x0;
+        x0 = x1;
+        x1 = hold;
+    }
+
+    draw_line(x0, y0, x1, y1);
+    draw_line(127-x1, y0, 127-x0, y1);
+    
+}
+
+static void btn_fxn(uint gpio, uint32_t eventMask){
+    //interrupt handler
     if(gpio == BUTTON1){
         flag.button1 = true;
 
@@ -193,7 +214,7 @@ static void btn_fxn(uint gpio, uint32_t eventMask){
 
 static void idle_task(void *arg){
     (void) arg; //Why is this always at the start of a function?
-    
+    // main task
     while (1) {
 
         if (programState == IDLE){
@@ -202,7 +223,8 @@ static void idle_task(void *arg){
 
             if (flag.button1 && !flag.button2){
                 flag.button1 = false;
-                programState = READ_POS;
+                //programState = READ_POS;
+                programState = FLOWER;
             } else if (!flag.button1 && flag.button2){
                 flag.button2 = false;
                 programState = READ_LIGHT;
@@ -213,9 +235,8 @@ static void idle_task(void *arg){
             }
 
             c = getchar_timeout_us(0);
+            //detect when character over USB
             if (c != PICO_ERROR_TIMEOUT){
-                //receive[0] = (char)c; //the first character should be overwritten in receive state but this doesn't happen?
-                //printf("%c\n", c);
                 programState = RECEIVE;
             }
 
@@ -499,6 +520,104 @@ static void music_task(void *arg){
     }
 }
 
+static void draw_task(void *arg){
+    (void)arg;
+
+    while (1){
+        if (programState == FLOWER){
+
+            //STEM
+            sym(63, 63, 63, 26);
+            sym(62, 63, 62, 26);
+            sym(61, 63, 61, 56);
+            
+            
+            //LEAF
+            sym(60, 57, 60, 54);
+            sym(59, 54, 69, 53);
+            sym(58, 53, 56, 53);
+            sym(56, 52, 54, 52);
+            sym(54, 51, 51, 51);
+            sym(51, 50, 50, 50);
+            sym(50, 49, 49, 49);
+            sym(49, 48, 47, 48);
+            sym(47, 47, 47, 46);
+            sym(46, 46, 46, 43);
+            sym(47, 43, 48, 43);
+            sym(48, 44, 49, 44);
+            sym(49, 45, 51, 45);
+            sym(51, 46, 53, 46);
+            sym(53, 47, 61, 47);
+            sym(61, 48, 61, 48);
+            
+            //PETAL1
+            sym(61, 28, 61, 37);
+            sym(60, 38, 60, 39);
+            sym(59, 39, 59, 40);
+            sym(58, 40, 58, 40);
+            sym(57, 41, 55, 41);
+            sym(55, 42, 53, 42);
+            sym(53, 41, 51, 41);
+            sym(51, 40, 50, 40);
+            sym(50, 39, 50, 39);
+            sym(49, 38, 49, 35);
+            sym(50, 35, 50, 30);
+            sym(51, 31, 51, 29);
+            sym(52, 30, 52, 28);
+            sym(53, 29, 53, 28);
+            sym(54, 28, 54, 27);
+            sym(55, 27, 57, 27);
+            sym(56, 26, 62, 26);  
+            
+            //PETAL2
+            sym(58, 24, 58, 22);
+            sym(57, 22, 56, 22);
+            sym(58, 21, 44, 21);
+            sym(47, 22, 45, 22);
+            sym(45, 23, 43, 23);
+            sym(43, 24, 43, 24);
+            sym(42, 25, 42, 26);
+            sym(41, 26, 41, 31);
+            sym(42, 31, 42, 33);
+            sym(43, 33, 43, 34);
+            sym(44, 34, 47, 34);
+            sym(47, 33, 48, 33);
+            sym(48, 32, 49, 32);
+            sym(49, 31, 49, 31);
+            
+            //PETAL3
+            sym(58, 20, 58, 17);
+            sym(59, 17, 60, 17);
+            sym(59, 16, 59, 14);
+            sym(58, 15, 57, 15);
+            sym(58, 14, 55, 14);
+            sym(55, 13, 52, 13);
+            sym(52, 12, 48, 12);
+            sym(48, 13, 46, 13);
+            sym(46, 14, 45, 14);
+            sym(45, 15, 44, 15);
+            sym(44, 16, 43, 16);
+            sym(43, 17, 43, 19);
+            sym(44, 19, 44, 20);
+            sym(45, 20, 45, 20);
+            
+            //PETAL4
+            sym(63, 16, 60, 16);
+            sym(58, 13, 58, 11);
+            sym(59, 11, 59, 11);
+            sym(60, 10, 61, 10);
+            sym(61, 9, 63, 9);
+
+            sleep_ms(3000);
+            clear_display();
+            
+            programState = IDLE;
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+    }
+}
+
 static void example_task(void *arg){
     (void)arg;
 
@@ -530,7 +649,7 @@ int main() {
     //    sleep_ms(10);
     //} 
 
-    TaskHandle_t readPosition, readLight, transferring, idling, receiving, display_lcd ,display_led, singing = NULL;
+    TaskHandle_t readPosition, readLight, transferring, idling, receiving, display_lcd ,display_led, singing, drawing = NULL;
     // Create the tasks with xTaskCreate
 
     BaseType_t nothing = xTaskCreate(
@@ -625,6 +744,18 @@ int main() {
             2,
             &singing);
     if(music != pdPASS) {
+        printf("Task creation failed\n");
+        return 0;
+    }
+
+    BaseType_t bloom = xTaskCreate(
+            draw_task,
+            "flower",
+            DEFAULT_STACK_SIZE,
+            NULL,
+            2,
+            &drawing);
+    if(bloom != pdPASS) {
         printf("Task creation failed\n");
         return 0;
     }
