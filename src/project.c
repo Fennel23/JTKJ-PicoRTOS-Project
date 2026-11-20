@@ -37,13 +37,14 @@
 //--------------------------------------------------------------------------------------------------------------------------------------
 
 
-enum state { IDLE=1, READ_POS, READ_LIGHT, TRANSMIT, RECEIVE, DISPLAY, LED, MUSIC, FLOWER};
+enum state { IDLE=1, READ_POS, READ_LIGHT, TRANSMIT, RECEIVE, DISPLAY, LED};
 enum state programState = IDLE;
 
 struct flags{
-    uint8_t button1;
-    uint8_t button2;
+    volatile uint8_t button1;
+    volatile uint8_t button2;
 } flag = {false, false};
+uint32_t past_time;
 
 char message[BUFFER_LENGTH];
 char receive[BUFFER_LENGTH];
@@ -51,6 +52,17 @@ char translated[BUFFER_LENGTH];
 char empty[BUFFER_LENGTH] = {0};
 uint8_t messageCount = 0;
 int8_t c;
+int button2_interrupt_count = 0;
+
+//function prototype
+void morse_char(char morse, uint8_t *space);
+void intercept(char buf[]);
+void translate(char buf[]);
+void musicPlayer();
+void pacman(uint8_t y, uint8_t x1, uint8_t x2);
+void sym(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
+void song();
+void flower();
 
 //--------------------------------------------------------------------------------------------------------------------------------------
 // https://github.com/robsoncouto/arduino-songs/blob/master/pacman/pacman.ino
@@ -76,9 +88,18 @@ void morse_char(char morse, uint8_t *space){
     if (messageCount < BUFFER_LENGTH){
         message[messageCount++] = morse;
         *space = 0;
-        flag.button1 = false;
     }
 
+}
+
+void intercept(char buf[]){
+    if(strcmp(buf,"----  \n") == 0){
+        song();
+        //programState = IDLE;
+    } else if(strcmp(buf,"-----  \n") == 0){
+        flower();
+        //programState = IDLE;
+    }
 }
 
 void translate(char buf[]){
@@ -89,6 +110,7 @@ void translate(char buf[]){
     char *morse_translate[27] = {".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..",
                                 "-", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", 
                                 "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."};
+    
 
     for(int i = 1; buf[i] != '\0'; i++){ 
         //use 's' to signal 2 consecutive spaces, means we need a space between letters.
@@ -124,7 +146,6 @@ void translate(char buf[]){
         token = strtok(NULL, " ");
     }
 }
-
 
 //--------------------------------------------------------------------------------------------------------------------------------------
 // https://github.com/robsoncouto/arduino-songs/blob/master/pacman/pacman.ino
@@ -203,13 +224,19 @@ void sym(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1){
 
 static void btn_fxn(uint gpio, uint32_t eventMask){
     //interrupt handler
-    if(gpio == BUTTON1){
-        flag.button1 = true;
+    uint32_t current_time = time_us_32();
+    if ((current_time - past_time) > 50000){
+        past_time = current_time;
 
-    }else if (gpio == BUTTON2){
-        flag.button2 = true;
+        if(gpio == BUTTON1){
+            flag.button1 = true;
+        
+        }else if (gpio == BUTTON2){
+            flag.button2 = true;
+            button2_interrupt_count++;
+        
+        }
     }
-
 }
 
 static void idle_task(void *arg){
@@ -223,15 +250,11 @@ static void idle_task(void *arg){
 
             if (flag.button1 && !flag.button2){
                 flag.button1 = false;
-                //programState = READ_POS;
-                programState = FLOWER;
+                programState = READ_POS;
+                //programState = FLOWER;
             } else if (!flag.button1 && flag.button2){
                 flag.button2 = false;
                 programState = READ_LIGHT;
-            } else if (flag.button1 && flag.button2){
-                flag.button1 = false;
-                flag.button2 = false;
-                programState = MUSIC;
             }
 
             c = getchar_timeout_us(0);
@@ -262,15 +285,17 @@ static void read_position_task(void *arg){
             if(flag.button1){
 
                 if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {//should I average multiple measurements?
+                    printf("a ");
                     if((0.85 < az) && (az < 1.15)){
                         morse_char('-', &space);
                     } else if (((0.85 < ay) && (ay < 1.15)) || ((ay < -0.85) && (-1 < ay))){
                         morse_char('.', &space);
                     }
                 }
+                flag.button1 = false;
 
             } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
-
+                printf("#button = %d ", button2_interrupt_count);
                 if (space == 2){ 
                     message[messageCount] = '\n';
                     space = 0;
@@ -341,7 +366,7 @@ static void transmit_task(void *arg){
         if (programState == TRANSMIT){
 
             printf("%s", message);
-            strcpy(message, empty);
+            memcpy(message, empty, BUFFER_LENGTH);
             buzzer_play_tone(731, 100);
             messageCount = 0;
             programState = IDLE;
@@ -359,9 +384,7 @@ static void receive_task(void *arg){
     while (1){
 
         if (programState == RECEIVE){
-
-            printf("%d", flag.button2);
-            rgb_led_write(255, 255, 0);
+            
             uint8_t i = 0;
 
             while (c != PICO_ERROR_TIMEOUT){
@@ -371,20 +394,19 @@ static void receive_task(void *arg){
                     receive[i] = '\0';
                     i = 0;
                     printf("%s", receive);
-
+                    intercept(receive);
+                    rgb_led_write(255, 255, 0);
                     while (1){
 
                         if(flag.button1){
                             translate(receive);
-                            strcpy(receive, empty);
+                            memcpy(receive, empty, BUFFER_LENGTH);
                             printf("%s", translated);
                             flag.button1 = false;
                             programState = DISPLAY;
                             break;
                         } else if(flag.button2){
-                            //printf("button2: %d\n", flag.button2);
                             flag.button2 = false;
-                            //printf("button2: %d\n", flag.button2);
                             programState = LED;
                             break;
                         }
@@ -409,8 +431,7 @@ static void display_task(void *arg) {
 
     //char translated[BUFFER_LENGTH] = "abcdefghijklmnopqrstuvwxyz";
     char display_buf[11];
-    char empty[11] = {0};
-    char empty1[BUFFER_LENGTH] = {0};
+    char empty1[11] = {0};
     uint8_t n;
 
     while(1) {
@@ -423,8 +444,8 @@ static void display_task(void *arg) {
                 flag.button1 = false;
                 clear_display();
                 if (strlen(translated) == 0){
-                    strcpy(display_buf, empty);
-                    memcpy(translated, empty1, BUFFER_LENGTH);
+                    strcpy(display_buf, empty1);
+                    memcpy(translated, empty, BUFFER_LENGTH);
                     programState = IDLE;
                 }
 
@@ -473,7 +494,7 @@ static void led_task(void *arg){
                 } else if (receive[i] == ' '){
                     sleep_ms(1000);
                 } else if (receive[i] == '\n'){
-                    strcpy(receive, empty);
+                    memcpy(receive, empty, BUFFER_LENGTH);
                     init_rgb_led();
                     printf("button2: %d\n", flag.button2);
                     programState = IDLE;
@@ -487,135 +508,116 @@ static void led_task(void *arg){
 }
 
     
-static void music_task(void *arg){
-    (void)arg;
-
-    while (1){
-
-        if (programState == MUSIC){
-
-            rgb_led_write(0, 0, 0);
-
-            pacman(2, 52, 76);
-            pacman(6, 44, 84);
-            pacman(10, 40, 88);
-            pacman(14, 36, 92);
-            pacman(18, 36, 92);
-            pacman(22, 32, 84);
-            pacman(26, 32, 72);
-            pacman(30, 32, 60);
-            pacman(34, 32, 72);
-            pacman(38, 32, 84);
-            pacman(42, 36, 92);
-            pacman(46, 36, 92);
-            pacman(50, 40, 88);
-            pacman(54, 44, 84);
-            pacman(58, 52, 76);
-
-            musicPlayer();
-            clear_display();
-            programState = IDLE;
-        }
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
+void song(){
+    rgb_led_write(0, 0, 0);
+    
+    pacman(2, 52, 76);
+    pacman(6, 44, 84);
+    pacman(10, 40, 88);
+    pacman(14, 36, 92);
+    pacman(18, 36, 92);
+    pacman(22, 32, 84);
+    pacman(26, 32, 72);
+    pacman(30, 32, 60);
+    pacman(34, 32, 72);
+    pacman(38, 32, 84);
+    pacman(42, 36, 92);
+    pacman(46, 36, 92);
+    pacman(50, 40, 88);
+    pacman(54, 44, 84);
+    pacman(58, 52, 76);
+    
+    musicPlayer();
+    clear_display();
+    rgb_led_write(255, 255, 0);
 }
 
-static void draw_task(void *arg){
-    (void)arg;
+void flower(){
+    //STEM
+    sym(63, 63, 63, 26);
+    sym(62, 63, 62, 26);
+    sym(61, 63, 61, 56);
+    
+    
+    //LEAF
+    sym(60, 57, 60, 54);
+    sym(59, 54, 69, 53);
+    sym(58, 53, 56, 53);
+    sym(56, 52, 54, 52);
+    sym(54, 51, 51, 51);
+    sym(51, 50, 50, 50);
+    sym(50, 49, 49, 49);
+    sym(49, 48, 47, 48);
+    sym(47, 47, 47, 46);
+    sym(46, 46, 46, 43);
+    sym(47, 43, 48, 43);
+    sym(48, 44, 49, 44);
+    sym(49, 45, 51, 45);
+    sym(51, 46, 53, 46);
+    sym(53, 47, 61, 47);
+    sym(61, 48, 61, 48);
+    
+    //PETAL1
+    sym(61, 28, 61, 37);
+    sym(60, 38, 60, 39);
+    sym(59, 39, 59, 40);
+    sym(58, 40, 58, 40);
+    sym(57, 41, 55, 41);
+    sym(55, 42, 53, 42);
+    sym(53, 41, 51, 41);
+    sym(51, 40, 50, 40);
+    sym(50, 39, 50, 39);
+    sym(49, 38, 49, 35);
+    sym(50, 35, 50, 30);
+    sym(51, 31, 51, 29);
+    sym(52, 30, 52, 28);
+    sym(53, 29, 53, 28);
+    sym(54, 28, 54, 27);
+    sym(55, 27, 57, 27);
+    sym(56, 26, 62, 26);  
+    
+    //PETAL2
+    sym(58, 24, 58, 22);
+    sym(57, 22, 56, 22);
+    sym(58, 21, 44, 21);
+    sym(47, 22, 45, 22);
+    sym(45, 23, 43, 23);
+    sym(43, 24, 43, 24);
+    sym(42, 25, 42, 26);
+    sym(41, 26, 41, 31);
+    sym(42, 31, 42, 33);
+    sym(43, 33, 43, 34);
+    sym(44, 34, 47, 34);
+    sym(47, 33, 48, 33);
+    sym(48, 32, 49, 32);
+    sym(49, 31, 49, 31);
+    
+    //PETAL3
+    sym(58, 20, 58, 17);
+    sym(59, 17, 60, 17);
+    sym(59, 16, 59, 14);
+    sym(58, 15, 57, 15);
+    sym(58, 14, 55, 14);
+    sym(55, 13, 52, 13);
+    sym(52, 12, 48, 12);
+    sym(48, 13, 46, 13);
+    sym(46, 14, 45, 14);
+    sym(45, 15, 44, 15);
+    sym(44, 16, 43, 16);
+    sym(43, 17, 43, 19);
+    sym(44, 19, 44, 20);
+    sym(45, 20, 45, 20);
+    
+    //PETAL4
+    sym(63, 16, 60, 16);
+    sym(58, 13, 58, 11);
+    sym(59, 11, 59, 11);
+    sym(60, 10, 61, 10);
+    sym(61, 9, 63, 9);
+    
+    sleep_ms(3000);
+    clear_display();
 
-    while (1){
-        if (programState == FLOWER){
-
-            //STEM
-            sym(63, 63, 63, 26);
-            sym(62, 63, 62, 26);
-            sym(61, 63, 61, 56);
-            
-            
-            //LEAF
-            sym(60, 57, 60, 54);
-            sym(59, 54, 69, 53);
-            sym(58, 53, 56, 53);
-            sym(56, 52, 54, 52);
-            sym(54, 51, 51, 51);
-            sym(51, 50, 50, 50);
-            sym(50, 49, 49, 49);
-            sym(49, 48, 47, 48);
-            sym(47, 47, 47, 46);
-            sym(46, 46, 46, 43);
-            sym(47, 43, 48, 43);
-            sym(48, 44, 49, 44);
-            sym(49, 45, 51, 45);
-            sym(51, 46, 53, 46);
-            sym(53, 47, 61, 47);
-            sym(61, 48, 61, 48);
-            
-            //PETAL1
-            sym(61, 28, 61, 37);
-            sym(60, 38, 60, 39);
-            sym(59, 39, 59, 40);
-            sym(58, 40, 58, 40);
-            sym(57, 41, 55, 41);
-            sym(55, 42, 53, 42);
-            sym(53, 41, 51, 41);
-            sym(51, 40, 50, 40);
-            sym(50, 39, 50, 39);
-            sym(49, 38, 49, 35);
-            sym(50, 35, 50, 30);
-            sym(51, 31, 51, 29);
-            sym(52, 30, 52, 28);
-            sym(53, 29, 53, 28);
-            sym(54, 28, 54, 27);
-            sym(55, 27, 57, 27);
-            sym(56, 26, 62, 26);  
-            
-            //PETAL2
-            sym(58, 24, 58, 22);
-            sym(57, 22, 56, 22);
-            sym(58, 21, 44, 21);
-            sym(47, 22, 45, 22);
-            sym(45, 23, 43, 23);
-            sym(43, 24, 43, 24);
-            sym(42, 25, 42, 26);
-            sym(41, 26, 41, 31);
-            sym(42, 31, 42, 33);
-            sym(43, 33, 43, 34);
-            sym(44, 34, 47, 34);
-            sym(47, 33, 48, 33);
-            sym(48, 32, 49, 32);
-            sym(49, 31, 49, 31);
-            
-            //PETAL3
-            sym(58, 20, 58, 17);
-            sym(59, 17, 60, 17);
-            sym(59, 16, 59, 14);
-            sym(58, 15, 57, 15);
-            sym(58, 14, 55, 14);
-            sym(55, 13, 52, 13);
-            sym(52, 12, 48, 12);
-            sym(48, 13, 46, 13);
-            sym(46, 14, 45, 14);
-            sym(45, 15, 44, 15);
-            sym(44, 16, 43, 16);
-            sym(43, 17, 43, 19);
-            sym(44, 19, 44, 20);
-            sym(45, 20, 45, 20);
-            
-            //PETAL4
-            sym(63, 16, 60, 16);
-            sym(58, 13, 58, 11);
-            sym(59, 11, 59, 11);
-            sym(60, 10, 61, 10);
-            sym(61, 9, 63, 9);
-
-            sleep_ms(3000);
-            clear_display();
-            
-            programState = IDLE;
-        }
-        vTaskDelay(pdMS_TO_TICKS(500));
-
-    }
 }
 
 static void example_task(void *arg){
@@ -642,14 +644,14 @@ int main() {
     init_display();
     clear_display();
     init_led();
-    gpio_set_irq_enabled_with_callback(SW1_PIN, GPIO_IRQ_EDGE_FALL, true, btn_fxn);
-    gpio_set_irq_enabled(SW2_PIN, GPIO_IRQ_EDGE_FALL, true);
+    gpio_set_irq_enabled_with_callback(SW1_PIN, GPIO_IRQ_EDGE_RISE, true, btn_fxn);
+    gpio_set_irq_enabled(SW2_PIN, GPIO_IRQ_EDGE_RISE, true);
     sleep_ms(300); //Wait some time so initialization of USB and hat is done.
     //while (!stdio_usb_connected()){
     //    sleep_ms(10);
     //} 
 
-    TaskHandle_t readPosition, readLight, transferring, idling, receiving, display_lcd ,display_led, singing, drawing = NULL;
+    TaskHandle_t readPosition, readLight, transferring, idling, receiving, display_lcd ,display_led = NULL;
     // Create the tasks with xTaskCreate
 
     BaseType_t nothing = xTaskCreate(
@@ -732,30 +734,6 @@ int main() {
             2,
             &display_led);
     if(blink != pdPASS) {
-        printf("Task creation failed\n");
-        return 0;
-    }
-
-    BaseType_t music = xTaskCreate(
-            music_task,
-            "song",
-            DEFAULT_STACK_SIZE,
-            NULL,
-            2,
-            &singing);
-    if(music != pdPASS) {
-        printf("Task creation failed\n");
-        return 0;
-    }
-
-    BaseType_t bloom = xTaskCreate(
-            draw_task,
-            "flower",
-            DEFAULT_STACK_SIZE,
-            NULL,
-            2,
-            &drawing);
-    if(bloom != pdPASS) {
         printf("Task creation failed\n");
         return 0;
     }
