@@ -55,8 +55,7 @@ int8_t c;
 int button2_interrupt_count = 0;
 
 //function prototype
-void morse_char(char morse, uint8_t *space);
-void intercept(char buf[]);
+void intercept(char buffer[]);
 void translate(char buf[]);
 void musicPlayer();
 void pacman(uint8_t y, uint8_t x1, uint8_t x2);
@@ -81,24 +80,19 @@ int melody[] = {
 
 //--------------------------------------------------------------------------------------------------------------------------------------
 
-
-void morse_char(char morse, uint8_t *space){
-    //add character to message, reset consecutive space
-
-    if (messageCount < BUFFER_LENGTH){
-        message[messageCount++] = morse;
-        *space = 0;
-    }
-
-}
-
-void intercept(char buf[]){
-    if(strcmp(buf,"----  \n") == 0){
+void intercept(char buffer[]){
+    if(strcmp(buffer,"----  \n") == 0){
         song();
-        //programState = IDLE;
-    } else if(strcmp(buf,"-----  \n") == 0){
+        programState = IDLE;
+    } else if(strcmp(buffer,"-----  \n") == 0){
         flower();
-        //programState = IDLE;
+        programState = IDLE;
+    } else if(strcmp(buffer, ".  \n") == 0){
+        //end of message
+        strcpy(buffer, ". -. -..  --- ..-.  -- . ... ... .- --. .");
+    } else if(strcmp(buffer, "...  \n") == 0){
+        //start of message
+        strcpy(buffer, "... - .- .-. -  --- ..-.  -- . ... ... .- --. .  \n");
     }
 }
 
@@ -108,7 +102,7 @@ void translate(char buf[]){
     uint8_t count = 0;
     uint8_t space = false; //keeps track whether space is needed
     char *morse_translate[27] = {".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..",
-                                "-", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", 
+                                ".---", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", 
                                 "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."};
     
 
@@ -242,6 +236,7 @@ static void btn_fxn(uint gpio, uint32_t eventMask){
 static void idle_task(void *arg){
     (void) arg; //Why is this always at the start of a function?
     // main task
+    uint8_t i = 0;
     while (1) {
 
         if (programState == IDLE){
@@ -258,15 +253,30 @@ static void idle_task(void *arg){
             }
 
             c = getchar_timeout_us(0);
+            
             //detect when character over USB
-            if (c != PICO_ERROR_TIMEOUT){
-                programState = RECEIVE;
-            }
-
+            while (c != PICO_ERROR_TIMEOUT){
+                if (c == '\n'){
+                    receive[i++] = '\n';
+                    receive[i] = '\0';
+                    i = 0;
+                    printf("%s", receive);
+                    intercept(receive);
+                    i = 0;
+                    //rgb_led_write(255, 255, 0);
+                    programState = RECEIVE;
+                    
+                } else if (i < BUFFER_LENGTH-1){
+                    receive[i++] = (char)c;
+                }
+                //add buffer overflow
+                c = getchar_timeout_us(0);
+            } 
         }
 
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+        
 }
 
 
@@ -283,20 +293,21 @@ static void read_position_task(void *arg){
             rgb_led_write(255, 0, 0);
 
             if(flag.button1){
-
                 if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {//should I average multiple measurements?
                     printf("a ");
                     if((0.85 < az) && (az < 1.15)){
-                        morse_char('-', &space);
+                        message[messageCount++] = '-';
+                        space = 0;
                     } else if (((0.85 < ay) && (ay < 1.15)) || ((ay < -0.85) && (-1 < ay))){
-                        morse_char('.', &space);
+                        message[messageCount++] = '.';
+                        space = 0;
                     }
                 }
                 flag.button1 = false;
 
             } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
                 printf("#button = %d ", button2_interrupt_count);
-                if (space == 2){ 
+                if (space >= 2){ 
                     message[messageCount] = '\n';
                     space = 0;
                     programState = TRANSMIT;
@@ -305,8 +316,9 @@ static void read_position_task(void *arg){
                     space++;
                 }
                 flag.button2 = false;
+            }
 
-            } else if(messageCount == BUFFER_LENGTH){
+            if(messageCount == BUFFER_LENGTH){
                 programState = TRANSMIT;
             }
 
@@ -330,15 +342,18 @@ static void read_light_task(void *arg){
 
             if(flag.button1){
 
-                if(veml6030_read_light() < 10){
-                    morse_char('-', &space);
+                if(veml6030_read_light() > 10){
+                    message[messageCount++] = '-';
+                    space = 0;
                 } else {
-                    morse_char('.', &space);
+                    message[messageCount++] = '.';
+                    space = 0;
                 }
+                flag.button1 = false;
 
             } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
 
-                if (space == 2){
+                if (space >= 2){
                     message[messageCount] = '\n';
                     space = 0;
                     programState = TRANSMIT;
@@ -347,8 +362,9 @@ static void read_light_task(void *arg){
                     space++;
                 }
                 flag.button2 = false;
+            }
 
-            } else if(messageCount == BUFFER_LENGTH){
+            if(messageCount == BUFFER_LENGTH){
                 programState = TRANSMIT;
             }
         }
@@ -364,13 +380,15 @@ static void transmit_task(void *arg){
     while (1){
 
         if (programState == TRANSMIT){
-
-            printf("%s", message);
-            memcpy(message, empty, BUFFER_LENGTH);
-            buzzer_play_tone(731, 100);
             messageCount = 0;
-            programState = IDLE;
+            intercept(message);
+            if (programState == TRANSMIT){
 
+                printf("%s", message);
+                buzzer_play_tone(731, 100);
+                programState = IDLE;
+            }
+            memcpy(message, empty, BUFFER_LENGTH);
         }
 
         vTaskDelay(pdMS_TO_TICKS(300));
@@ -385,42 +403,24 @@ static void receive_task(void *arg){
 
         if (programState == RECEIVE){
             
+            rgb_led_write(255, 255, 0);
             uint8_t i = 0;
 
-            while (c != PICO_ERROR_TIMEOUT){
-
-                if (c == '\n'){
-                    receive[i++] = '\n';
-                    receive[i] = '\0';
-                    i = 0;
-                    printf("%s", receive);
-                    intercept(receive);
-                    rgb_led_write(255, 255, 0);
-                    while (1){
-
-                        if(flag.button1){
-                            translate(receive);
-                            memcpy(receive, empty, BUFFER_LENGTH);
-                            printf("%s", translated);
-                            flag.button1 = false;
-                            programState = DISPLAY;
-                            break;
-                        } else if(flag.button2){
-                            flag.button2 = false;
-                            programState = LED;
-                            break;
-                        }
-                    }
-                } else if (i < BUFFER_LENGTH-1){
-                    receive[i++] = (char)c;
-                }
-                //add buffer overflow
-                c = getchar_timeout_us(0);
-            } 
-
+            if(flag.button1){
+                translate(receive);
+                memcpy(receive, empty, BUFFER_LENGTH);
+                printf("%s", translated);
+                flag.button1 = false;
+                programState = DISPLAY;
+                //break;
+            } else if(flag.button2){
+                flag.button2 = false;
+                programState = LED;
+                //break;
+            }
         }
-
         vTaskDelay(pdMS_TO_TICKS(100));
+                
     }
 
 }
@@ -529,7 +529,6 @@ void song(){
     
     musicPlayer();
     clear_display();
-    rgb_led_write(255, 255, 0);
 }
 
 void flower(){
