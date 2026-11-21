@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include <stdlib.h>
 
@@ -237,21 +238,19 @@ static void idle_task(void *arg){
     (void) arg; //Why is this always at the start of a function?
     // main task
     uint8_t i = 0;
+
     while (1) {
 
         if (programState == IDLE){
-
             rgb_led_write(0, 255, 0);
 
             if (flag.button1 && !flag.button2){
                 flag.button1 = false;
                 programState = READ_POS;
-                //programState = FLOWER;
             } else if (!flag.button1 && flag.button2){
                 flag.button2 = false;
                 programState = READ_LIGHT;
             }
-
             c = getchar_timeout_us(0);
             
             //detect when character over USB
@@ -337,7 +336,7 @@ static void read_light_task(void *arg){
     while (1){
 
         if (programState == READ_LIGHT){
-
+            
             rgb_led_write(0, 0, 255);
 
             if(flag.button1){
@@ -509,7 +508,6 @@ static void led_task(void *arg){
 
     
 void song(){
-    rgb_led_write(0, 0, 0);
     
     pacman(2, 52, 76);
     pacman(6, 44, 84);
@@ -619,6 +617,70 @@ void flower(){
 
 }
 
+static void sensor_task(void *arg){
+    (void)arg;
+
+    float ax, ay, az, gx, gy, gz, temp;
+    float movement;
+    uint8_t move;
+    uint32_t start_time = 0;
+    uint32_t end_time = 0;
+    float ax_max, ax_min, az_max, az_min, gy_max, gy_min;
+    ax_max = ax_min = az_max = az_min = gy_max = gy_min = 0;
+    
+    while(1){
+
+        if (programState == IDLE){
+
+            printf("h");
+            //rgb_led_write(0, 0, 0);
+            ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &temp);
+            movement = sqrt(pow(ax, 2) + pow((az-1.0),2));
+            if (movement > 0.75){
+                start_time = time_us_32();
+            }
+            while(movement > 0.75){
+                move = true;
+                ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &temp);
+                movement = sqrt(pow(ax, 2) + pow((az-1),2));
+                if(ax < ax_min){
+                    ax_min = ax;
+                } else if(ax_max < ax){
+                    ax_max = ax;
+                }
+                if(az < az_min){
+                    az_min = az;
+                } else if(az_max < az){
+                    az_max = az;
+                }
+                if(gy < gy_min){
+                    gy_min = gy;
+                } else if(gy_max < gy){
+                    gy_max = gy;
+                }
+            }
+            if (move){
+                printf("move");
+                end_time = time_us_32();
+                move = false;
+                if((600000 < (end_time -start_time)) && ((end_time-start_time) < 1500000)){
+                    if((gy_min < -140) && (140 < gy_max) && (az_min < 0.1) && (0.7 < az_max)){
+                        if ((ax_min < -0.9) && (-0.3 < ax_max)){
+                            printf("left");
+                            flower();
+                        } else if ((ax_min < 0.3) && (0.9 < ax_max)){
+                            printf("right");
+                            song();
+                        }
+                    }
+                }
+                ax_max = ax_min = az_max = az_min = gy_max = gy_min = end_time = start_time = 0;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 static void example_task(void *arg){
     (void)arg;
 
@@ -650,7 +712,7 @@ int main() {
     //    sleep_ms(10);
     //} 
 
-    TaskHandle_t readPosition, readLight, transferring, idling, receiving, display_lcd ,display_led = NULL;
+    TaskHandle_t readPosition, readLight, transferring, idling, receiving, display_lcd ,display_led, data = NULL;
     // Create the tasks with xTaskCreate
 
     BaseType_t nothing = xTaskCreate(
@@ -661,6 +723,18 @@ int main() {
             2,
             &idling);
     if(nothing != pdPASS) {
+        printf("Task creation failed\n");
+        return 0;
+    }
+
+    BaseType_t sensor = xTaskCreate(
+            sensor_task,
+            "data",
+            DEFAULT_STACK_SIZE,
+            NULL,
+            2,
+            &data);
+    if(sensor != pdPASS) {
         printf("Task creation failed\n");
         return 0;
     }

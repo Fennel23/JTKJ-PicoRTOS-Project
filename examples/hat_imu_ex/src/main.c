@@ -34,12 +34,15 @@ void imu_task(void *pvParameters) {
     {
         if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {
             
-            printf("Accel: X=%f, Y=%f, Z=%f | Gyro: X=%f, Y=%f, Z=%f| Temp: %2.2f°C\n", ax, ay, az, gx, gy, gz, t);
+            //printf("Accel: X=%f, Y=%f, Z=%f | Gyro: X=%f, Y=%f, Z=%f| Temp: %2.2f°C\n", ax, ay, az, gx, gy, gz, t);
+            printf("%2.2f,%2.2f,%2.2f,%2.2f,%2.2f,%2.2f\n", ax, ay, az, gx, gy, gz);
+            //printf("%2.2f,%2.2f,%2.2f\n",ax, ay, az);
+            //printf("%2.2f,%2.2f,%2.2f\n", gx, gy, gz);
 
         } else {
             printf("Failed to read imu data\n");
         }
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
 }
