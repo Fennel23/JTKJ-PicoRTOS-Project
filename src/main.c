@@ -81,7 +81,7 @@ static void sensor_task(void *arg){
         //printf("sensorTask\n");
 
         // Do not remove this
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -127,7 +127,7 @@ static void print_task(void *arg){
         //printf("printTask\n");
         
         // Do not remove this
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 

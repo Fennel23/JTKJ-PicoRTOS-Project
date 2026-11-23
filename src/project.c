@@ -16,7 +16,7 @@
 
 // Default stack size for the tasks. It can be reduced to 1024 if task is not using lot of memory.
 #define DEFAULT_STACK_SIZE 2048
-#define BUFFER_LENGTH 1024 
+#define BUFFER_LENGTH 1024
 
 //--------------------------------------------------------------------------------------------------------------------------------------
 // https://github.com/robsoncouto/arduino-songs/blob/master/pacman/pacman.ino
@@ -42,9 +42,10 @@ enum state { IDLE=1, READ_POS, READ_LIGHT, TRANSMIT, RECEIVE, DISPLAY, LED};
 enum state programState = IDLE;
 
 struct flags{
-    volatile uint8_t button1;
-    volatile uint8_t button2;
+    uint8_t button1;
+    uint8_t button2;
 } flag = {false, false};
+
 uint32_t past_time;
 
 char message[BUFFER_LENGTH];
@@ -53,13 +54,11 @@ char translated[BUFFER_LENGTH];
 char empty[BUFFER_LENGTH] = {0};
 uint8_t messageCount = 0;
 int8_t c;
-int button2_interrupt_count = 0;
 
-//function prototype
-void intercept(char buffer[]);
-void translate(char buf[]);
+// function prototype
 void musicPlayer();
-void pacman(uint8_t y, uint8_t x1, uint8_t x2);
+uint8_t intercept(char buffer[]);
+void translate(char buf[]);
 void sym(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1);
 void song();
 void flower();
@@ -79,71 +78,6 @@ int melody[] = {
     NOTE_F5, 32,  NOTE_FS5, 32,  NOTE_G5, 32,  NOTE_G5, 32, NOTE_GS5, 32,  NOTE_A5, 16, NOTE_B5, 8
     };
 
-//--------------------------------------------------------------------------------------------------------------------------------------
-
-void intercept(char buffer[]){
-    if(strcmp(buffer,"----  \n") == 0){
-        song();
-        programState = IDLE;
-    } else if(strcmp(buffer,"-----  \n") == 0){
-        flower();
-        programState = IDLE;
-    } else if(strcmp(buffer, ".  \n") == 0){
-        //end of message
-        strcpy(buffer, ". -. -..  --- ..-.  -- . ... ... .- --. .");
-    } else if(strcmp(buffer, "...  \n") == 0){
-        //start of message
-        strcpy(buffer, "... - .- .-. -  --- ..-.  -- . ... ... .- --. .  \n");
-    }
-}
-
-void translate(char buf[]){
-    //translate string of morse code to ascii characters.
-    char *token;
-    uint8_t count = 0;
-    uint8_t space = false; //keeps track whether space is needed
-    char *morse_translate[27] = {".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..",
-                                ".---", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", 
-                                "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."};
-    
-
-    for(int i = 1; buf[i] != '\0'; i++){ 
-        //use 's' to signal 2 consecutive spaces, means we need a space between letters.
-        if ((buf[(i-1)] == ' ') && (buf[i] == ' ')){
-            buf[(i-1)] = 's';
-        }
-    }
-
-    token = strtok(buf, " ");
-
-    while (token != NULL){
-
-        uint8_t len = strlen(token);
-
-        if(token[(len-1)] == 's'){
-            space = true;
-            token[(len-1)] = '\0';
-        } else if(token == "\n"){
-            translated[count++] = '\n';
-        }
-
-        for (int i=0; i < 26; i++){
-            if(strcmp(morse_translate[i], token) == 0){
-                translated[count++] = 97 + i;
-            }
-        }
-
-        if (space){ //space added after letter added
-            translated[count++] = ' ';
-            space = false;
-        }
-
-        token = strtok(NULL, " ");
-    }
-}
-
-//--------------------------------------------------------------------------------------------------------------------------------------
-// https://github.com/robsoncouto/arduino-songs/blob/master/pacman/pacman.ino
 
 // notes of the melody followed by the duration.
 // a 4 means a quarter note, 8 an eighteenth , 16 sixteenth, so on
@@ -186,27 +120,86 @@ void musicPlayer() {
             buzzer_turn_off();
         }
     }
-
 //--------------------------------------------------------------------------------------------------------------------------------------
 
-
-void pacman(uint8_t y, uint8_t x1, uint8_t x2){
-    for(int i = y; i<(y+4); i++){
-            draw_line(x1, i, x2, i);
-        }
-
+uint8_t intercept(char buffer[]){
+    // intercept certain commands while sending/receiving morse
+    // execute corresponding action
+    if (strcmp(buffer,"----  \n") == 0){
+        song();
+        programState = IDLE;
+        return 1;
+    } else if (strcmp(buffer,"-----  \n") == 0){
+        flower();
+        programState = IDLE;
+        return 1;
+    } else if (strcmp(buffer, ".  \n") == 0){
+        // end of message
+        strcpy(buffer, ". -. -..  --- ..-.  -- . ... ... .- --. .");
+    } else if (strcmp(buffer, "...  \n") == 0){
+        // start of message
+        strcpy(buffer, "... - .- .-. -  --- ..-.  -- . ... ... .- --. .  \n");
+    }
+    return 0;
 }
 
+void translate(char buf[]){
+    // translate string of morse code to ascii characters.
+    char *token;
+    uint8_t count = 0;
+    uint8_t space = false; // keeps track whether space is needed
+    // alphabetically ordered morse
+    char *morse_translate[27] = {".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..",
+                                ".---", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", 
+                                "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."};
+    
+    for (int i = 1; buf[i] != '\0'; i++){ 
+        // use 's' to signal 2 consecutive spaces, means space between letters is required
+        if ((buf[(i-1)] == ' ') && (buf[i] == ' ')){
+            buf[(i-1)] = 's';
+        }
+    }
+    // tokenise buffer
+    token = strtok(buf, " ");
+
+    while (token != NULL){
+
+        uint8_t len = strlen(token);
+        // 's' removed and space flag activated
+        if (token[(len-1)] == 's'){
+            space = true;
+            token[(len-1)] = '\0';
+
+        } else if (token == "\n"){
+            translated[count++] = '\n';
+        }
+        // match token to a morse letter
+        for (int i=0; i < 26; i++){
+            if (strcmp(morse_translate[i], token) == 0){
+                translated[count++] = 97 + i;
+            }
+        }
+
+        if (space){ // space added in case of active flag
+            translated[count++] = ' ';
+            space = false;
+        }
+
+        token = strtok(NULL, " ");
+    }
+}
+
+
 void sym(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1){
-    //draw line and symmetry of line accros y-axis
+    // draw line and mirror accros y-axis
     uint8_t hold;
 
-    if(y1 < y0){ //in order for a line to be drawn, y1 and x1 must be the smallest values.
+    if (y1 < y0){ // y1 and x1 must be the smallest values.
         hold = y0;
         y0 = y1;
         y1 = hold;
     }
-    if(x1 < x0){
+    if (x1 < x0){
         hold = x0;
         x0 = x1;
         x1 = hold;
@@ -218,24 +211,24 @@ void sym(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1){
 }
 
 static void btn_fxn(uint gpio, uint32_t eventMask){
-    //interrupt handler
+    // interrupt handler
     uint32_t current_time = time_us_32();
-    if ((current_time - past_time) > 50000){
+    // advised 10ms = 10000 µs
+    if ((current_time - past_time) > 200000){// extraordinarily large time in between, but otherwise still double button presses
         past_time = current_time;
 
-        if(gpio == BUTTON1){
+        if (gpio == BUTTON1){
             flag.button1 = true;
         
-        }else if (gpio == BUTTON2){
+        } else if (gpio == BUTTON2){
             flag.button2 = true;
-            button2_interrupt_count++;
-        
+
         }
     }
 }
 
 static void idle_task(void *arg){
-    (void) arg; //Why is this always at the start of a function?
+    (void) arg;
     // main task
     uint8_t i = 0;
 
@@ -253,22 +246,29 @@ static void idle_task(void *arg){
             }
             c = getchar_timeout_us(0);
             
-            //detect when character over USB
+            // detect when character over USB
             while (c != PICO_ERROR_TIMEOUT){
                 if (c == '\n'){
                     receive[i++] = '\n';
                     receive[i] = '\0';
                     i = 0;
-                    printf("%s", receive);
-                    intercept(receive);
+                    // intercept commands
+                    if (intercept(receive)){
+                        break;
+                    };
                     i = 0;
-                    //rgb_led_write(255, 255, 0);
                     programState = RECEIVE;
                     
                 } else if (i < BUFFER_LENGTH-1){
                     receive[i++] = (char)c;
+
+                // in case of overflow
+                } else if (i == BUFFER_LENGTH-1){  
+                    receive [i++] = '\0';
+                    buzzer_play_tone(731, 100);
+                    programState = RECEIVE; 
                 }
-                //add buffer overflow
+
                 c = getchar_timeout_us(0);
             } 
         }
@@ -278,10 +278,83 @@ static void idle_task(void *arg){
         
 }
 
+static void sensor_task(void *arg){
+    (void)arg;
+    // execute commands based on movement
+    // neutral position = horizontal
+    float ax, ay, az, gx, gy, gz, temp;
+    float movement;
+    uint8_t move;
+    uint32_t start_time = 0;
+    uint32_t end_time = 0;
+    float ax_max, ax_min, az_max, az_min, gy_max, gy_min;
+    ax_max = ax_min = az_max = az_min = gy_max = gy_min = 0;
+    
+    while(1){
+
+        if (programState == IDLE){
+
+            ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &temp);
+            movement = sqrt(pow(ax, 2) + pow((az-1.0),2)); // calculate significant movement
+
+            if (movement > 0.75){ // threshold for significant movement
+                start_time = time_us_32();
+            }
+
+            // collect min/max of certain variables
+            while (movement > 0.75){
+                move = true;
+                ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &temp);
+                movement = sqrt(pow(ax, 2) + pow((az-1),2));
+                if (ax < ax_min){
+                    ax_min = ax;
+                } else if (ax_max < ax){
+                    ax_max = ax;
+                }
+
+                if (az < az_min){
+                    az_min = az;
+                } else if (az_max < az){
+                    az_max = az;
+                }
+
+                if (gy < gy_min){
+                    gy_min = gy;
+                } else if (gy_max < gy){
+                    gy_max = gy;
+                }
+            }
+
+            // compare min/max of certain variables to thresholds
+            if (move){
+                end_time = time_us_32();
+                move = false;
+
+                // duration of movement between 0.6 and 1.5 seconds
+                if((600000 < (end_time -start_time)) && ((end_time-start_time) < 1500000)){
+                    //rotation of 90° around y-axis
+                    if((gy_min < -140) && (140 < gy_max) && (az_min < 0.1) && (0.55 < az_max)){
+                        // rotation towards left
+                        if ((ax_min < -0.85) && (-0.15 < ax_max)){
+                            flower();
+                        // rotation towards right
+                        } else if ((ax_min < 0.15) && (0.85 < ax_max)){
+                            song();
+                        }
+                    }
+                }
+                ax_max = ax_min = az_max = az_min = gy_max = gy_min = end_time = start_time = 0;
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 
 static void read_position_task(void *arg){
     (void) arg;
-
+    // combination of position of device and buttons create morse message
     uint8_t space = 0; 
     float ax, ay, az, gx, gy, gz, t;
 
@@ -291,33 +364,41 @@ static void read_position_task(void *arg){
 
             rgb_led_write(255, 0, 0);
 
-            if(flag.button1){
-                if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {//should I average multiple measurements?
-                    printf("a ");
-                    if((0.85 < az) && (az < 1.15)){
+            if (flag.button1){
+                if (ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &t) == 0) {
+                    // horizontal/flat
+                    if ((0.85 < az) && (az < 1.15)){
                         message[messageCount++] = '-';
                         space = 0;
-                    } else if (((0.85 < ay) && (ay < 1.15)) || ((ay < -0.85) && (-1 < ay))){
+                    // pointing up/down
+                    } else if (((0.85 < ay) && (ay < 1.15)) || ((-1.15 < ay) && (ay < -0.85))){
                         message[messageCount++] = '.';
                         space = 0;
                     }
                 }
                 flag.button1 = false;
 
-            } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
-                printf("#button = %d ", button2_interrupt_count);
+            } else if ((flag.button2) && (messageCount < BUFFER_LENGTH-4)){
                 if (space >= 2){ 
+                    // two consecutive spaces -> transmit message
                     message[messageCount] = '\n';
                     space = 0;
                     programState = TRANSMIT;
                 } else if (space < 2){
+                    // increase count of consecutive spaces
                     message[messageCount++] = ' ';
                     space++;
                 }
                 flag.button2 = false;
             }
 
-            if(messageCount == BUFFER_LENGTH){
+            if (messageCount == BUFFER_LENGTH-4){
+                // guarantuee proper termination of string when overflow
+                message[messageCount++] = ' ';
+                message[messageCount++] = ' ';
+                message[messageCount++] = '\n';
+                message[messageCount] = '\0';
+                buzzer_play_tone(731, 100);
                 programState = TRANSMIT;
             }
 
@@ -330,7 +411,7 @@ static void read_position_task(void *arg){
 
 static void read_light_task(void *arg){
     (void) arg;
-
+    // combination of absence of light and buttons create morse message
     uint8_t space = 0;
 
     while (1){
@@ -340,30 +421,39 @@ static void read_light_task(void *arg){
             rgb_led_write(0, 0, 255);
 
             if(flag.button1){
-
+                // normal lighting conditions
                 if(veml6030_read_light() > 10){
                     message[messageCount++] = '-';
                     space = 0;
                 } else {
+                // light sensor covered
                     message[messageCount++] = '.';
                     space = 0;
                 }
                 flag.button1 = false;
 
-            } else if((flag.button2) && (messageCount < BUFFER_LENGTH)){
+            } else if ((flag.button2) && (messageCount < BUFFER_LENGTH-4)){
 
                 if (space >= 2){
+                    // two consecutive spaces -> transmit message
                     message[messageCount] = '\n';
                     space = 0;
                     programState = TRANSMIT;
                 } else if (space < 2) {
+                    // increase count of consecutive spaces
                     message[messageCount++] = ' ';
                     space++;
                 }
                 flag.button2 = false;
             }
 
-            if(messageCount == BUFFER_LENGTH){
+            if(messageCount == BUFFER_LENGTH-4){
+                // guarantuee proper termination of string when overflow
+                message[messageCount++] = ' ';
+                message[messageCount++] = ' ';
+                message[messageCount++] = '\n';
+                message[messageCount] = '\0';
+                buzzer_play_tone(731, 100);
                 programState = TRANSMIT;
             }
         }
@@ -375,13 +465,13 @@ static void read_light_task(void *arg){
 
 static void transmit_task(void *arg){
     (void) arg;
-
+    // transmit message over usb
     while (1){
 
         if (programState == TRANSMIT){
             messageCount = 0;
             intercept(message);
-            if (programState == TRANSMIT){
+            if (programState == TRANSMIT){ // re-evaluation of prgoramState in case it changed during intercept
 
                 printf("%s", message);
                 buzzer_play_tone(731, 100);
@@ -397,25 +487,22 @@ static void transmit_task(void *arg){
 
 static void receive_task(void *arg){
     (void) arg;
-
+    // choose how to display received message
     while (1){
 
         if (programState == RECEIVE){
             
             rgb_led_write(255, 255, 0);
-            uint8_t i = 0;
 
-            if(flag.button1){
+            if (flag.button1){ // show on display
                 translate(receive);
                 memcpy(receive, empty, BUFFER_LENGTH);
-                printf("%s", translated);
                 flag.button1 = false;
                 programState = DISPLAY;
-                //break;
-            } else if(flag.button2){
+
+            } else if(flag.button2){// blink using LED
                 flag.button2 = false;
                 programState = LED;
-                //break;
             }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -427,8 +514,7 @@ static void receive_task(void *arg){
 
 static void display_task(void *arg) {
     (void)arg;
-
-    //char translated[BUFFER_LENGTH] = "abcdefghijklmnopqrstuvwxyz";
+    // display translated message on LCD
     char display_buf[11];
     char empty1[11] = {0};
     uint8_t n;
@@ -442,17 +528,21 @@ static void display_task(void *arg) {
             if (flag.button1){
                 flag.button1 = false;
                 clear_display();
+
+                // in case of full message displayed
                 if (strlen(translated) == 0){
                     strcpy(display_buf, empty1);
                     memcpy(translated, empty, BUFFER_LENGTH);
                     programState = IDLE;
                 }
 
-                snprintf(display_buf,11,"%s",translated);
+                snprintf(display_buf,11,"%s",translated); //11 characters fit on display at a time
                 n = strlen(display_buf);
                 write_text(display_buf);
 
-                for (int i = (n); i <= strlen(translated); i++){
+                //iterate through translated string and shift all characters n to the left
+                //n = length of display_buf = amount of characters already displayed
+                for (int i = n; i <= strlen(translated); i++){
                     translated[i-(n)] = translated[i];
                 }
             }
@@ -468,15 +558,13 @@ static void display_task(void *arg) {
 
 static void led_task(void *arg){
     (void)arg;
-
-    while(1){
+    // display morse code through LED
+    while (1){
 
         if (programState == LED){
 
-            rgb_led_write(0, 255, 255);
-            sleep_ms(500);
             stop_rgb_led();
-            sleep_ms(500);
+            sleep_ms(1023);
 
             for (uint8_t i = 0; i <= strlen(receive); i++){
 
@@ -485,17 +573,19 @@ static void led_task(void *arg){
                     sleep_ms(541);
                     set_led_status(false);
                     sleep_ms(389);
+
                 } else if (receive[i] == '.'){
                     set_led_status(true);
                     sleep_ms(127);
                     set_led_status(false);
                     sleep_ms(389);
+
                 } else if (receive[i] == ' '){
                     sleep_ms(1000);
+
                 } else if (receive[i] == '\n'){
                     memcpy(receive, empty, BUFFER_LENGTH);
                     init_rgb_led();
-                    printf("button2: %d\n", flag.button2);
                     programState = IDLE;
                 }
             }
@@ -508,28 +598,33 @@ static void led_task(void *arg){
 
     
 void song(){
-    
-    pacman(2, 52, 76);
-    pacman(6, 44, 84);
-    pacman(10, 40, 88);
-    pacman(14, 36, 92);
-    pacman(18, 36, 92);
-    pacman(22, 32, 84);
-    pacman(26, 32, 72);
-    pacman(30, 32, 60);
-    pacman(34, 32, 72);
-    pacman(38, 32, 84);
-    pacman(42, 36, 92);
-    pacman(46, 36, 92);
-    pacman(50, 40, 88);
-    pacman(54, 44, 84);
-    pacman(58, 52, 76);
-    
+
+    // draw picture
+    draw_square(52, 2, 24, 4, true);
+    draw_square(44, 6, 40, 4, true);
+    draw_square(40, 10, 44, 4, true);
+    draw_square(36, 14, 56, 4, true);
+    draw_square(36, 18, 56, 4, true);
+    draw_square(32, 22, 52, 4, true);
+    draw_square(32, 26, 40, 4, true);
+    draw_square(32, 30, 28, 4, true);
+    draw_square(32, 34, 40, 4, true);
+    draw_square(32, 38, 52, 4, true);
+    draw_square(36, 42, 56, 4, true);
+    draw_square(36, 46, 56, 4, true);
+    draw_square(40, 50, 44, 4, true);
+    draw_square(44, 54, 40, 4, true);
+    draw_square(52, 58, 24, 4, true);
+
+    // play song
     musicPlayer();
+    sleep_ms(1000);
     clear_display();
 }
 
 void flower(){
+    // draw a flower on lcd
+
     //STEM
     sym(63, 63, 63, 26);
     sym(62, 63, 62, 26);
@@ -617,83 +712,10 @@ void flower(){
 
 }
 
-static void sensor_task(void *arg){
-    (void)arg;
-
-    float ax, ay, az, gx, gy, gz, temp;
-    float movement;
-    uint8_t move;
-    uint32_t start_time = 0;
-    uint32_t end_time = 0;
-    float ax_max, ax_min, az_max, az_min, gy_max, gy_min;
-    ax_max = ax_min = az_max = az_min = gy_max = gy_min = 0;
-    
-    while(1){
-
-        if (programState == IDLE){
-
-            printf("h");
-            //rgb_led_write(0, 0, 0);
-            ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &temp);
-            movement = sqrt(pow(ax, 2) + pow((az-1.0),2));
-            if (movement > 0.75){
-                start_time = time_us_32();
-            }
-            while(movement > 0.75){
-                move = true;
-                ICM42670_read_sensor_data(&ax, &ay, &az, &gx, &gy, &gz, &temp);
-                movement = sqrt(pow(ax, 2) + pow((az-1),2));
-                if(ax < ax_min){
-                    ax_min = ax;
-                } else if(ax_max < ax){
-                    ax_max = ax;
-                }
-                if(az < az_min){
-                    az_min = az;
-                } else if(az_max < az){
-                    az_max = az;
-                }
-                if(gy < gy_min){
-                    gy_min = gy;
-                } else if(gy_max < gy){
-                    gy_max = gy;
-                }
-            }
-            if (move){
-                printf("move");
-                end_time = time_us_32();
-                move = false;
-                if((600000 < (end_time -start_time)) && ((end_time-start_time) < 1500000)){
-                    if((gy_min < -140) && (140 < gy_max) && (az_min < 0.1) && (0.7 < az_max)){
-                        if ((ax_min < -0.9) && (-0.3 < ax_max)){
-                            printf("left");
-                            flower();
-                        } else if ((ax_min < 0.3) && (0.9 < ax_max)){
-                            printf("right");
-                            song();
-                        }
-                    }
-                }
-                ax_max = ax_min = az_max = az_min = gy_max = gy_min = end_time = start_time = 0;
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
-
-static void example_task(void *arg){
-    (void)arg;
-
-    for(;;){
-        tight_loop_contents(); // Modify with application code here.
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    }
-}
-
 int main() {
+
+    // initialise
     stdio_init_all();
-    // Uncomment this lines if you want to wait till the serial monitor is connected
-    
     init_hat_sdk();
     init_button1();
     init_button2();
@@ -705,15 +727,15 @@ int main() {
     init_display();
     clear_display();
     init_led();
+
+    // interrupts
     gpio_set_irq_enabled_with_callback(SW1_PIN, GPIO_IRQ_EDGE_RISE, true, btn_fxn);
     gpio_set_irq_enabled(SW2_PIN, GPIO_IRQ_EDGE_RISE, true);
-    sleep_ms(300); //Wait some time so initialization of USB and hat is done.
-    //while (!stdio_usb_connected()){
-    //    sleep_ms(10);
-    //} 
+    sleep_ms(300); //wait some time so initialization of USB and hat is done
 
     TaskHandle_t readPosition, readLight, transferring, idling, receiving, display_lcd ,display_led, data = NULL;
-    // Create the tasks with xTaskCreate
+
+    // task creation
 
     BaseType_t nothing = xTaskCreate(
             idle_task,
@@ -740,13 +762,13 @@ int main() {
     }
 
     BaseType_t read_pos = xTaskCreate(
-                read_position_task,       // (en) Task function
-                "position",              // (en) Name of the task 
-                DEFAULT_STACK_SIZE, // (en) Size of the stack for this task (in words). Generally 1024 or 2048
-                NULL,               // (en) Arguments of the task 
-                2,                  // (en) Priority of this task
-                &readPosition);    // (en) A handle to control the execution of this task
-    if(read_pos != pdPASS) {
+                read_position_task,       // task function
+                "position",              // name of the task 
+                DEFAULT_STACK_SIZE, // size of the stack for this task (in words). Generally 1024 or 2048
+                NULL,               // arguments of the task 
+                2,                  // priority of this task
+                &readPosition);    // handle to control the execution of this task
+    if(read_pos != pdPASS) { // verify task creation
         printf("Task creation failed\n");
         return 0;
     }
@@ -811,10 +833,10 @@ int main() {
         return 0;
     }
     
-    // Start the scheduler (never returns)
+    // start the scheduler (never returns)
     vTaskStartScheduler();
 
-    // Never reach this line.
+    // never reach this line.
     return 0;
 }
 
