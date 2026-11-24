@@ -35,6 +35,7 @@
 #define NOTE_E6  1319
 #define NOTE_G6  1568
 #define REST      0
+
 //--------------------------------------------------------------------------------------------------------------------------------------
 
 
@@ -176,7 +177,7 @@ void translate(char buf[]){
         // match token to a morse letter
         for (int i=0; i < 26; i++){
             if (strcmp(morse_translate[i], token) == 0){
-                translated[count++] = 97 + i;
+                translated[count++] = 97 + i;// ascii value for a-z = 97-122
             }
         }
 
@@ -214,7 +215,7 @@ static void btn_fxn(uint gpio, uint32_t eventMask){
     // interrupt handler
     uint32_t current_time = time_us_32();
     // advised 10ms = 10000 µs
-    if ((current_time - past_time) > 200000){// extraordinarily large time in between, but otherwise still double button presses
+    if ((current_time - past_time) > 200000){// long time inbetween
         past_time = current_time;
 
         if (gpio == BUTTON1){
@@ -248,6 +249,8 @@ static void idle_task(void *arg){
             
             // detect when character over USB
             while (c != PICO_ERROR_TIMEOUT){
+
+                // message ended
                 if (c == '\n'){
                     receive[i++] = '\n';
                     receive[i] = '\0';
@@ -258,7 +261,8 @@ static void idle_task(void *arg){
                     };
                     i = 0;
                     programState = RECEIVE;
-                    
+
+                // collecting characters over usb
                 } else if (i < BUFFER_LENGTH-1){
                     receive[i++] = (char)c;
 
@@ -471,7 +475,7 @@ static void transmit_task(void *arg){
         if (programState == TRANSMIT){
             messageCount = 0;
             intercept(message);
-            if (programState == TRANSMIT){ // re-evaluation of prgoramState in case it changed during intercept
+            if (programState == TRANSMIT){ // re-evaluation of programState in case it changed during intercept
 
                 printf("%s", message);
                 buzzer_play_tone(731, 100);
@@ -525,6 +529,7 @@ static void display_task(void *arg) {
 
             rgb_led_write(255, 0, 255);
 
+            // use button 1 to 'scroll' through screen
             if (flag.button1){
                 flag.button1 = false;
                 clear_display();
@@ -535,13 +540,13 @@ static void display_task(void *arg) {
                     memcpy(translated, empty, BUFFER_LENGTH);
                     programState = IDLE;
                 }
-
+                // display at most 11 characters
                 snprintf(display_buf,11,"%s",translated); //11 characters fit on display at a time
                 n = strlen(display_buf);
                 write_text(display_buf);
 
-                //iterate through translated string and shift all characters n to the left
-                //n = length of display_buf = amount of characters already displayed
+                // iterate through translated string and shift all characters n to the left
+                // n = length of display_buf = amount of characters displayed during previous cycle
                 for (int i = n; i <= strlen(translated); i++){
                     translated[i-(n)] = translated[i];
                 }
@@ -623,7 +628,7 @@ void song(){
 }
 
 void flower(){
-    // draw a flower on lcd
+    // draw a flower
 
     //STEM
     sym(63, 63, 63, 26);
